@@ -3,8 +3,10 @@ package main
 import (
 	"net/http"
 
-	"github.com/and161185/metrics-alerting/cmd/server/handlers"
 	"github.com/and161185/metrics-alerting/storage"
+
+	"github.com/go-chi/chi/middleware"
+	"github.com/go-chi/chi/v5"
 )
 
 func main() {
@@ -16,8 +18,13 @@ func main() {
 
 func run() error {
 
-	storage := storage.NewMemStorage()
+	server := Server{storage: storage.NewMemStorage()}
 
-	http.HandleFunc(`/update/`, handlers.UpdateMetricHandler(storage))
-	return http.ListenAndServe(`:8080`, nil)
+	router := chi.NewRouter()
+	router.Use(middleware.StripSlashes)
+	router.Post("/update/{type}/{name}/{value}", server.UpdateMetricHandler)
+	router.Get("/value/{type}/{name}", server.GetMetricHandler)
+	router.Get("/", server.ListMetricsHandler)
+
+	return http.ListenAndServe(":8080", router)
 }
