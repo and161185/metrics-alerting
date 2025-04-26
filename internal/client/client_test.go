@@ -1,10 +1,11 @@
-package main
+package client
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/and161185/metrics-alerting/model"
 	"github.com/and161185/metrics-alerting/storage"
@@ -25,7 +26,13 @@ func TestSendToServer(t *testing.T) {
 	st := storage.NewMemStorage()
 	st.Save(model.Metric{ID: "TestMetric", Type: model.Gauge, Value: 42.0})
 
-	err := SendToServer(st, ts.URL)
+	client := &Client{
+		storage:    st,
+		config:     &Config{serverAddr: ts.URL},
+		httpClient: &http.Client{Timeout: 2 * time.Second},
+	}
+
+	err := client.SendToServer()
 	if err != nil {
 		t.Errorf("SendToServer failed: %v", err)
 	}
