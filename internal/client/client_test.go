@@ -24,7 +24,11 @@ func TestSendToServer(t *testing.T) {
 	defer ts.Close()
 
 	st := storage.NewMemStorage()
-	st.Save(model.Metric{ID: "TestMetric", Type: model.Gauge, Value: 42.0})
+	m := model.Metric{ID: "TestMetric", Type: model.Gauge, Value: 42.0}
+	err := st.Save(m)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s failed: %v", m.ID, err)
+	}
 
 	client := &Client{
 		storage:    st,
@@ -32,7 +36,7 @@ func TestSendToServer(t *testing.T) {
 		httpClient: &http.Client{Timeout: 2 * time.Second},
 	}
 
-	err := client.SendToServer()
+	err = client.SendToServer()
 	if err != nil {
 		t.Errorf("SendToServer failed: %v", err)
 	}

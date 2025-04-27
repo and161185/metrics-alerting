@@ -35,7 +35,8 @@ func NewMetric(typ, name, val string) (model.Metric, error) {
 
 	metricsValue, err := getMetricsValue(val, metric.Type)
 	if err != nil {
-		return model.Metric{}, fmt.Errorf("invalid value: %w", err)
+		err := fmt.Errorf("invalid value: %w", err)
+		return model.Metric{}, err
 	}
 
 	metric.Value = metricsValue

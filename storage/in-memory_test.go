@@ -11,7 +11,10 @@ func TestMemStorage(t *testing.T) {
 
 	// gauge
 	g := model.Metric{ID: "TestGauge", Type: model.Gauge, Value: 42.0}
-	st.Save(g)
+	err := st.Save(g)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", g.ID, g.Value, err)
+	}
 
 	all, err := st.GetAll()
 	if err != nil {
@@ -24,7 +27,10 @@ func TestMemStorage(t *testing.T) {
 	}
 
 	g2 := model.Metric{ID: "TestGauge", Type: model.Gauge, Value: 100.0}
-	st.Save(g2)
+	err = st.Save(g2)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", g2.ID, g2.Value, err)
+	}
 
 	all, err = st.GetAll()
 	if err != nil {
@@ -38,10 +44,16 @@ func TestMemStorage(t *testing.T) {
 
 	// counter
 	c := model.Metric{ID: "TestCounter", Type: model.Counter, Value: 10}
-	st.Save(c)
+	err = st.Save(c)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", g2.ID, g2.Value, err)
+	}
 
 	c2 := model.Metric{ID: "TestCounter", Type: model.Counter, Value: 5}
-	st.Save(c2)
+	err = st.Save(c2)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", g2.ID, g2.Value, err)
+	}
 
 	all, err = st.GetAll()
 	if err != nil {

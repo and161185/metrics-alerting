@@ -4,7 +4,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,11 +47,39 @@ func NewConfig() *Config {
 	flag.IntVar(&cfg.clientTimeout, "t", 10, "client timeout")
 	flag.Parse()
 
+	ReadEnvironment(cfg)
+
 	if !strings.HasPrefix(cfg.serverAddr, "http://") && !strings.HasPrefix(cfg.serverAddr, "https://") {
 		cfg.serverAddr = "http://" + cfg.serverAddr
 	}
 
 	return cfg
+}
+
+func ReadEnvironment(cfg *Config) {
+	if addr := os.Getenv("ADDRESS"); addr != "" {
+		cfg.serverAddr = addr
+	}
+
+	reportIntervalEnv := os.Getenv("REPORT_INTERVAL")
+	if reportIntervalEnv != "" {
+		v, err := strconv.Atoi(reportIntervalEnv)
+		if err == nil {
+			cfg.reportInterval = v
+		} else {
+			log.Printf("invalid REPORT_INTERVAL env var: %v", err)
+		}
+	}
+
+	pollIntervallEnv := os.Getenv("POLL_INTERVAL")
+	if pollIntervallEnv != "" {
+		v, err := strconv.Atoi(pollIntervallEnv)
+		if err == nil {
+			cfg.pollInterval = v
+		} else {
+			log.Printf("invalid POLL_INTERVAL env var: %v", err)
+		}
+	}
 }
 
 func (c *Client) Run() error {
@@ -67,19 +98,20 @@ func (c *Client) Run() error {
 
 		if tics%pollInterval == 0 {
 			for _, m := range collector.CollectRuntimeMetrics() {
-				store.Save(m)
+				err := store.Save(m)
+				if err != nil {
+					log.Printf("failed to save metric [type=%s, name=%s]: %v", m.Type, m.ID, err)
+				}
 			}
 		}
 
 		if tics%reportInterval == 0 {
-			if err := c.SendToServer(); err == nil {
-				fmt.Println("SendToServer success")
-
-				collector.ResetPollCount()
-			} else {
-				fmt.Println("SendToServer error:", err)
-
+			if err := c.SendToServer(); err != nil {
+				log.Printf("failed to send metrics: %v", err)
+				continue
 			}
+			fmt.Println("SendToServer success")
+			collector.ResetPollCount()
 		}
 	}
 }
@@ -114,8 +146,15 @@ func (c *Client) SendToServer() error {
 		if err != nil {
 			return fmt.Errorf("sending %s: %w", metric.ID, err)
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_, err = io.Copy(io.Discard, resp.Body)
+		if err != nil {
+			return fmt.Errorf("getting response %s: %w", metric.ID, err)
+		}
+
+		err = resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("response body closing %s: %w", metric.ID, err)
+		}
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("unexpected status for %s: %d", metric.ID, resp.StatusCode)

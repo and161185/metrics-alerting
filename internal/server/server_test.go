@@ -2,6 +2,7 @@ package server
 
 import (
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,7 +42,11 @@ func TestUpdateMetricHandler(t *testing.T) {
 			r.ServeHTTP(w, req)
 
 			response := w.Result()
-			defer response.Body.Close()
+			defer func() {
+				if err := response.Body.Close(); err != nil {
+					log.Fatalf("failed to close response body for url %s: %v", v.url, err)
+				}
+			}()
 
 			assert.Equal(t, v.wantStatus, response.StatusCode)
 
@@ -51,46 +56,71 @@ func TestUpdateMetricHandler(t *testing.T) {
 
 func TestGetMetricHandler(t *testing.T) {
 	st := storage.NewMemStorage()
-	st.Save(model.Metric{ID: "test", Type: model.Gauge, Value: 42.0})
+
+	m := model.Metric{ID: "test", Type: model.Gauge, Value: 42.0}
+	err := st.Save(m)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", m.ID, m.Value, err)
+	}
 	server := Server{storage: st}
 
 	router := chi.NewRouter()
 	router.Get("/value/{type}/{name}", server.GetMetricHandler)
 
-	req := httptest.NewRequest(http.MethodGet, "/value/gauge/test", nil)
+	url := "/value/gauge/test"
+	req := httptest.NewRequest(http.MethodGet, url, nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
-	resp := w.Result()
-	defer resp.Body.Close()
+	response := w.Result()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Fatalf("failed to close response body for url %s: %v", url, err)
+		}
+	}()
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, response.StatusCode)
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(response.Body)
 	assert.Equal(t, "42", strings.TrimSpace(string(body)))
 }
 
 func TestListMetricsHandler(t *testing.T) {
 	st := storage.NewMemStorage()
-	st.Save(model.Metric{ID: "foo", Type: model.Gauge, Value: 1.23})
-	st.Save(model.Metric{ID: "bar", Type: model.Counter, Value: 10})
+
+	m1 := model.Metric{ID: "foo", Type: model.Gauge, Value: 1.23}
+	err := st.Save(m1)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", m1.ID, m1.Value, err)
+	}
+
+	m2 := model.Metric{ID: "bar", Type: model.Counter, Value: 10}
+	err = st.Save(m2)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", m2.ID, m2.Value, err)
+	}
 	server := Server{storage: st}
 
 	router := chi.NewRouter()
 	router.Get("/", server.ListMetricsHandler)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	url := "/"
+	req := httptest.NewRequest(http.MethodGet, url, nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
-	resp := w.Result()
-	defer resp.Body.Close()
+	response := w.Result()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Fatalf("failed to close response body for url %s: %v", url, err)
+		}
+	}()
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, response.StatusCode)
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(response.Body)
 	assert.Contains(t, string(body), "foo")
 	assert.Contains(t, string(body), "bar")
 }
