@@ -5,7 +5,6 @@ go 1.22.1
 require (
 	github.com/go-chi/chi v1.5.5
 	github.com/go-chi/chi/v5 v5.2.1
-	github.com/magiconair/properties v1.8.10
 	github.com/stretchr/testify v1.10.0
 )
 

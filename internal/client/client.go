@@ -1,92 +1,42 @@
 package client
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/and161185/metrics-alerting/cmd/agent/collector"
-	"github.com/and161185/metrics-alerting/storage"
+	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/model"
 )
 
+type Storage interface {
+	Save(metric *model.Metric) error
+	GetAll() (map[string]*model.Metric, error)
+}
+
 type Client struct {
-	storage    storage.Storage
-	config     *Config
+	storage    Storage
+	config     *config.ClientConfig
 	httpClient *http.Client
 }
 
-type Config struct {
-	serverAddr     string
-	reportInterval int
-	pollInterval   int
-	clientTimeout  int
-}
-
-func NewClient(storage storage.Storage) *Client {
-
-	config := NewConfig()
+func NewClient(storage Storage, config *config.ClientConfig) *Client {
 
 	return &Client{
 		storage:    storage,
 		config:     config,
-		httpClient: &http.Client{Timeout: time.Duration(config.clientTimeout) * time.Second},
+		httpClient: &http.Client{Timeout: time.Duration(config.ClientTimeout) * time.Second},
 	}
 }
 
-func NewConfig() *Config {
-	cfg := &Config{}
-	flag.StringVar(&cfg.serverAddr, "a", "http://localhost:8080", "HTTP server address (must include http(s)://)")
-	flag.IntVar(&cfg.reportInterval, "r", 10, "report interval")
-	flag.IntVar(&cfg.pollInterval, "p", 2, "poll interval")
-	flag.IntVar(&cfg.clientTimeout, "t", 10, "client timeout")
-	flag.Parse()
+func (clnt *Client) Run() error {
 
-	ReadEnvironment(cfg)
-
-	if !strings.HasPrefix(cfg.serverAddr, "http://") && !strings.HasPrefix(cfg.serverAddr, "https://") {
-		cfg.serverAddr = "http://" + cfg.serverAddr
-	}
-
-	return cfg
-}
-
-func ReadEnvironment(cfg *Config) {
-	if addr := os.Getenv("ADDRESS"); addr != "" {
-		cfg.serverAddr = addr
-	}
-
-	reportIntervalEnv := os.Getenv("REPORT_INTERVAL")
-	if reportIntervalEnv != "" {
-		v, err := strconv.Atoi(reportIntervalEnv)
-		if err == nil {
-			cfg.reportInterval = v
-		} else {
-			log.Printf("invalid REPORT_INTERVAL env var: %v", err)
-		}
-	}
-
-	pollIntervallEnv := os.Getenv("POLL_INTERVAL")
-	if pollIntervallEnv != "" {
-		v, err := strconv.Atoi(pollIntervallEnv)
-		if err == nil {
-			cfg.pollInterval = v
-		} else {
-			log.Printf("invalid POLL_INTERVAL env var: %v", err)
-		}
-	}
-}
-
-func (c *Client) Run() error {
-
-	store := c.storage
-	pollInterval := c.config.pollInterval
-	reportInterval := c.config.reportInterval
+	store := clnt.storage
+	pollInterval := clnt.config.PollInterval
+	reportInterval := clnt.config.ReportInterval
 
 	tics := 0
 
@@ -98,7 +48,7 @@ func (c *Client) Run() error {
 
 		if tics%pollInterval == 0 {
 			for _, m := range collector.CollectRuntimeMetrics() {
-				err := store.Save(m)
+				err := store.Save(&m)
 				if err != nil {
 					log.Printf("failed to save metric [type=%s, name=%s]: %v", m.Type, m.ID, err)
 				}
@@ -106,7 +56,7 @@ func (c *Client) Run() error {
 		}
 
 		if tics%reportInterval == 0 {
-			if err := c.SendToServer(); err != nil {
+			if err := clnt.SendToServer(); err != nil {
 				log.Printf("failed to send metrics: %v", err)
 				continue
 			}
@@ -116,11 +66,11 @@ func (c *Client) Run() error {
 	}
 }
 
-func (c *Client) SendToServer() error {
+func (clnt *Client) SendToServer() error {
 
-	store := c.storage
-	serverAddr := c.config.serverAddr
-	httpClient := c.httpClient
+	store := clnt.storage
+	serverAddr := clnt.config.ServerAddr
+	httpClient := clnt.httpClient
 
 	all, err := store.GetAll()
 	if err != nil {
