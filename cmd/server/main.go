@@ -1,23 +1,20 @@
 package main
 
 import (
-	"net/http"
+	"log"
 
-	"github.com/and161185/metrics-alerting/cmd/server/handlers"
+	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/server"
 	"github.com/and161185/metrics-alerting/storage"
 )
 
 func main() {
 
-	if err := run(); err != nil {
-		panic(err)
-	}
-}
-
-func run() error {
-
+	config := config.NewServerConfig()
 	storage := storage.NewMemStorage()
 
-	http.HandleFunc(`/update/`, handlers.UpdateMetricHandler(storage))
-	return http.ListenAndServe(`:8080`, nil)
+	srv := server.NewServer(storage, config)
+	if err := srv.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
