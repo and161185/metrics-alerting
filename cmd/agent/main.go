@@ -44,7 +44,12 @@ func run(serverAddr string) error {
 func SendToServer(s *storage.MemStorage, serverAddr string) error {
 	client := &http.Client{Timeout: 2 * time.Second}
 
-	for _, metric := range s.GetAll() {
+	all, err := s.GetAll()
+	if err != nil {
+		return fmt.Errorf("internal error: %w", err)
+	}
+
+	for _, metric := range all {
 		url := fmt.Sprintf(
 			"%s/update/%s/%s/%v",
 			serverAddr,
