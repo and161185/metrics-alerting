@@ -1,4 +1,4 @@
-package logic
+package metrics
 
 import (
 	"errors"
@@ -12,30 +12,31 @@ var ErrInvalidValue = errors.New("invalid value")
 var ErrInvalidType = errors.New("invalid metric type")
 var ErrInvalidName = errors.New("invalid metric name")
 
-func NewEmptyMetric(typ, name string) (model.Metric, error) {
+func NewEmptyMetric(typ, name string) (*model.Metric, error) {
 
 	metricsType := model.MetricType(typ)
 	if invalidMetricsType(metricsType) {
-		return model.Metric{}, ErrInvalidType
+		return &model.Metric{}, ErrInvalidType
 	}
 
 	if invalidMetricsName(name) {
-		return model.Metric{}, ErrInvalidName
+		return &model.Metric{}, ErrInvalidName
 	}
 
-	return model.Metric{ID: name, Type: metricsType, Value: 0}, nil
+	return &model.Metric{ID: name, Type: metricsType, Value: 0}, nil
 }
 
-func NewMetric(typ, name, val string) (model.Metric, error) {
+func NewMetric(typ, name, val string) (*model.Metric, error) {
 
 	metric, err := NewEmptyMetric(typ, name)
 	if err != nil {
-		return model.Metric{}, err
+		return &model.Metric{}, err
 	}
 
 	metricsValue, err := getMetricsValue(val, metric.Type)
 	if err != nil {
-		return model.Metric{}, fmt.Errorf("invalid value: %w", err)
+		err := fmt.Errorf("invalid value: %w", err)
+		return &model.Metric{}, err
 	}
 
 	metric.Value = metricsValue
@@ -43,8 +44,8 @@ func NewMetric(typ, name, val string) (model.Metric, error) {
 	return metric, nil
 }
 
-func invalidMetricsType(t model.MetricType) bool {
-	result := t != model.Gauge && t != model.Counter
+func invalidMetricsType(typ model.MetricType) bool {
+	result := typ != model.Gauge && typ != model.Counter
 	return result
 }
 

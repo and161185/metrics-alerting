@@ -6,50 +6,38 @@ import (
 	"github.com/and161185/metrics-alerting/model"
 )
 
-func TestMemStorage(t *testing.T) {
+func TestMemStorage_SaveGauge(t *testing.T) {
 	st := NewMemStorage()
+	metric := model.Metric{ID: "TestGauge", Type: model.Gauge, Value: 42.0}
 
-	// gauge
-	g := model.Metric{ID: "TestGauge", Type: model.Gauge, Value: 42.0}
-	st.Save(g)
-
-	all, err := st.GetAll()
-	if err != nil {
-		t.Errorf("internal error")
-		return
+	if err := st.Save(&metric); err != nil {
+		t.Fatalf("failed to save: %v", err)
 	}
 
+	all, _ := st.GetAll()
 	if got := all["TestGauge"].Value; got != 42.0 {
-		t.Errorf("Gauge save failed: got %v, want 42", got)
+		t.Errorf("want 42.0, got %v", got)
 	}
+}
 
-	g2 := model.Metric{ID: "TestGauge", Type: model.Gauge, Value: 100.0}
-	st.Save(g2)
+func TestMemStorage_OverwriteGauge(t *testing.T) {
+	st := NewMemStorage()
+	st.Save(&model.Metric{ID: "TestGauge", Type: model.Gauge, Value: 42.0})
+	st.Save(&model.Metric{ID: "TestGauge", Type: model.Gauge, Value: 100.0})
 
-	all, err = st.GetAll()
-	if err != nil {
-		t.Errorf("internal error")
-		return
-	}
-
+	all, _ := st.GetAll()
 	if got := all["TestGauge"].Value; got != 100.0 {
-		t.Errorf("Gauge overwrite failed: got %v, want 100", got)
+		t.Errorf("overwrite failed: want 100.0, got %v", got)
 	}
+}
 
-	// counter
-	c := model.Metric{ID: "TestCounter", Type: model.Counter, Value: 10}
-	st.Save(c)
+func TestMemStorage_AccumulateCounter(t *testing.T) {
+	st := NewMemStorage()
+	st.Save(&model.Metric{ID: "TestCounter", Type: model.Counter, Value: 10})
+	st.Save(&model.Metric{ID: "TestCounter", Type: model.Counter, Value: 5})
 
-	c2 := model.Metric{ID: "TestCounter", Type: model.Counter, Value: 5}
-	st.Save(c2)
-
-	all, err = st.GetAll()
-	if err != nil {
-		t.Errorf("internal error")
-		return
-	}
-
+	all, _ := st.GetAll()
 	if got := all["TestCounter"].Value; got != 15.0 {
-		t.Errorf("Counter accumulate failed: got %v, want 15", got)
+		t.Errorf("accumulate failed: want 15.0, got %v", got)
 	}
 }

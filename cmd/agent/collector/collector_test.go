@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/and161185/metrics-alerting/model"
-	"github.com/magiconair/properties/assert"
 )
 
 func TestCollectRuntimeMetrics(t *testing.T) {
@@ -40,7 +39,9 @@ func TestCollectRuntimeMetrics(t *testing.T) {
 	metrics2 := CollectRuntimeMetrics()
 	poll2 := getMetricValue(metrics2, "PollCount")
 
-	assert.Equal(t, poll1+1, poll2, "PollCount test failed")
+	if poll1+1 != poll2 {
+		t.Errorf("pollCount test failed: need %f get %f", poll1+1, poll2)
+	}
 }
 
 func getMetricValue(metrics []model.Metric, id string) float64 {
@@ -49,5 +50,5 @@ func getMetricValue(metrics []model.Metric, id string) float64 {
 			return m.Value
 		}
 	}
-	return -1 // или panic если хочешь жёстче
+	return -1
 }

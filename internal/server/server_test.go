@@ -2,6 +2,7 @@ package server
 
 import (
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"github.com/and161185/metrics-alerting/model"
 	"github.com/and161185/metrics-alerting/storage"
 	"github.com/go-chi/chi/v5"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestUpdateMetricHandler(t *testing.T) {
@@ -20,12 +20,12 @@ func TestUpdateMetricHandler(t *testing.T) {
 		url        string
 		wantStatus int
 	}{
-		{"invalid method", http.MethodGet, "/update/gauge/test/1.23", http.StatusMethodNotAllowed},
-		{"valid gauge", http.MethodPost, "/update/gauge/test/1.23", http.StatusOK},
-		{"valid counter", http.MethodPost, "/update/counter/testCounter/1", http.StatusOK},
-		{"invalid counter value", http.MethodPost, "/update/counter/testCounter/1.2", http.StatusBadRequest},
-		{"invalid type", http.MethodPost, "/update/type/testCounter/1", http.StatusBadRequest},
-		{"invalid url", http.MethodPost, "/update/gauge/gauge", http.StatusNotFound},
+		{"invalid_method", http.MethodGet, "/update/gauge/test/1.23", http.StatusMethodNotAllowed},
+		{"valid_gauge", http.MethodPost, "/update/gauge/test/1.23", http.StatusOK},
+		{"valid_counter", http.MethodPost, "/update/counter/testCounter/1", http.StatusOK},
+		{"invalid_counter value", http.MethodPost, "/update/counter/testCounter/1.2", http.StatusBadRequest},
+		{"invalid_type", http.MethodPost, "/update/type/testCounter/1", http.StatusBadRequest},
+		{"invalid_url", http.MethodPost, "/update/gauge/gauge", http.StatusNotFound},
 	}
 
 	for _, v := range tests {
@@ -41,56 +41,97 @@ func TestUpdateMetricHandler(t *testing.T) {
 			r.ServeHTTP(w, req)
 
 			response := w.Result()
-			defer response.Body.Close()
+			defer func() {
+				if err := response.Body.Close(); err != nil {
+					log.Fatalf("failed to close response body for url %s: %v", v.url, err)
+				}
+			}()
 
-			assert.Equal(t, v.wantStatus, response.StatusCode)
-
+			if v.wantStatus != response.StatusCode {
+				log.Fatalf("wrong response status: want %d get %d", v.wantStatus, response.StatusCode)
+			}
 		})
 	}
 }
 
 func TestGetMetricHandler(t *testing.T) {
 	st := storage.NewMemStorage()
-	st.Save(model.Metric{ID: "test", Type: model.Gauge, Value: 42.0})
+
+	m := model.Metric{ID: "test", Type: model.Gauge, Value: 42.0}
+	err := st.Save(&m)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", m.ID, m.Value, err)
+	}
 	server := Server{storage: st}
 
 	router := chi.NewRouter()
 	router.Get("/value/{type}/{name}", server.GetMetricHandler)
 
-	req := httptest.NewRequest(http.MethodGet, "/value/gauge/test", nil)
+	url := "/value/gauge/test"
+	req := httptest.NewRequest(http.MethodGet, url, nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
-	resp := w.Result()
-	defer resp.Body.Close()
+	response := w.Result()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Fatalf("failed to close response body for url %s: %v", url, err)
+		}
+	}()
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	if http.StatusOK != response.StatusCode {
+		log.Fatalf("wrong response status: want %d get %d", http.StatusOK, response.StatusCode)
+	}
 
-	body, _ := io.ReadAll(resp.Body)
-	assert.Equal(t, "42", strings.TrimSpace(string(body)))
+	body, _ := io.ReadAll(response.Body)
+	if http.StatusOK != response.StatusCode {
+		log.Fatalf("wrong response body: want %s get %s", "42", strings.TrimSpace(string(body)))
+	}
 }
 
 func TestListMetricsHandler(t *testing.T) {
 	st := storage.NewMemStorage()
-	st.Save(model.Metric{ID: "foo", Type: model.Gauge, Value: 1.23})
-	st.Save(model.Metric{ID: "bar", Type: model.Counter, Value: 10})
+
+	m1 := model.Metric{ID: "foo", Type: model.Gauge, Value: 1.23}
+	err := st.Save(&m1)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", m1.ID, m1.Value, err)
+	}
+
+	m2 := model.Metric{ID: "bar", Type: model.Counter, Value: 10}
+	err = st.Save(&m2)
+	if err != nil {
+		t.Fatalf("Save in storage metric %s %f failed: %v", m2.ID, m2.Value, err)
+	}
 	server := Server{storage: st}
 
 	router := chi.NewRouter()
 	router.Get("/", server.ListMetricsHandler)
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	url := "/"
+	req := httptest.NewRequest(http.MethodGet, url, nil)
 	w := httptest.NewRecorder()
 
 	router.ServeHTTP(w, req)
 
-	resp := w.Result()
-	defer resp.Body.Close()
+	response := w.Result()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			log.Fatalf("failed to close response body for url %s: %v", url, err)
+		}
+	}()
 
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	if http.StatusOK != response.StatusCode {
+		log.Fatalf("wrong response status: want %d get %d", http.StatusOK, response.StatusCode)
+	}
 
-	body, _ := io.ReadAll(resp.Body)
-	assert.Contains(t, string(body), "foo")
-	assert.Contains(t, string(body), "bar")
+	body, _ := io.ReadAll(response.Body)
+	if !strings.Contains(string(body), "foo") {
+		t.Errorf(`response body doesn't contain "foo": %s`, string(body))
+	}
+	if !strings.Contains(string(body), "bar") {
+		t.Errorf(`response body doesn't contain "bar": %s`, string(body))
+	}
+
 }

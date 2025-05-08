@@ -1,61 +1,42 @@
 package client
 
 import (
-	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/and161185/metrics-alerting/cmd/agent/collector"
-	"github.com/and161185/metrics-alerting/storage"
+	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/model"
 )
 
+type Storage interface {
+	Save(metric *model.Metric) error
+	GetAll() (map[string]*model.Metric, error)
+}
+
 type Client struct {
-	storage    storage.Storage
-	config     *Config
+	storage    Storage
+	config     *config.ClientConfig
 	httpClient *http.Client
 }
 
-type Config struct {
-	serverAddr     string
-	reportInterval int
-	pollInterval   int
-	clientTimeout  int
-}
-
-func NewClient(storage storage.Storage) *Client {
-
-	config := NewConfig()
+func NewClient(storage Storage, config *config.ClientConfig) *Client {
 
 	return &Client{
 		storage:    storage,
 		config:     config,
-		httpClient: &http.Client{Timeout: time.Duration(config.clientTimeout) * time.Second},
+		httpClient: &http.Client{Timeout: time.Duration(config.ClientTimeout) * time.Second},
 	}
 }
 
-func NewConfig() *Config {
-	cfg := &Config{}
-	flag.StringVar(&cfg.serverAddr, "a", "http://localhost:8080", "HTTP server address (must include http(s)://)")
-	flag.IntVar(&cfg.reportInterval, "r", 10, "report interval")
-	flag.IntVar(&cfg.pollInterval, "p", 2, "poll interval")
-	flag.IntVar(&cfg.clientTimeout, "t", 10, "client timeout")
-	flag.Parse()
+func (clnt *Client) Run() error {
 
-	if !strings.HasPrefix(cfg.serverAddr, "http://") && !strings.HasPrefix(cfg.serverAddr, "https://") {
-		cfg.serverAddr = "http://" + cfg.serverAddr
-	}
-
-	return cfg
-}
-
-func (c *Client) Run() error {
-
-	store := c.storage
-	pollInterval := c.config.pollInterval
-	reportInterval := c.config.reportInterval
+	store := clnt.storage
+	pollInterval := clnt.config.PollInterval
+	reportInterval := clnt.config.ReportInterval
 
 	tics := 0
 
@@ -67,28 +48,29 @@ func (c *Client) Run() error {
 
 		if tics%pollInterval == 0 {
 			for _, m := range collector.CollectRuntimeMetrics() {
-				store.Save(m)
+				err := store.Save(&m)
+				if err != nil {
+					log.Printf("failed to save metric [type=%s, name=%s]: %v", m.Type, m.ID, err)
+				}
 			}
 		}
 
 		if tics%reportInterval == 0 {
-			if err := c.SendToServer(); err == nil {
-				fmt.Println("SendToServer success")
-
-				collector.ResetPollCount()
-			} else {
-				fmt.Println("SendToServer error:", err)
-
+			if err := clnt.SendToServer(); err != nil {
+				log.Printf("failed to send metrics: %v", err)
+				continue
 			}
+			fmt.Println("SendToServer success")
+			collector.ResetPollCount()
 		}
 	}
 }
 
-func (c *Client) SendToServer() error {
+func (clnt *Client) SendToServer() error {
 
-	store := c.storage
-	serverAddr := c.config.serverAddr
-	httpClient := c.httpClient
+	store := clnt.storage
+	serverAddr := clnt.config.ServerAddr
+	httpClient := clnt.httpClient
 
 	all, err := store.GetAll()
 	if err != nil {
@@ -114,8 +96,15 @@ func (c *Client) SendToServer() error {
 		if err != nil {
 			return fmt.Errorf("sending %s: %w", metric.ID, err)
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
+		_, err = io.Copy(io.Discard, resp.Body)
+		if err != nil {
+			return fmt.Errorf("getting response %s: %w", metric.ID, err)
+		}
+
+		err = resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("response body closing %s: %w", metric.ID, err)
+		}
 
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("unexpected status for %s: %d", metric.ID, resp.StatusCode)
