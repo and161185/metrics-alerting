@@ -1,20 +1,50 @@
-package main
+package server
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"net/http"
 
 	"github.com/and161185/metrics-alerting/cmd/server/logic"
 	"github.com/and161185/metrics-alerting/storage"
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
-type Server struct {
-	storage storage.Storage
+type Config struct {
+	Addr string
 }
 
-var ErrInvalidUrl = errors.New("invalid url")
+type Server struct {
+	storage storage.Storage
+	config  *Config
+}
+
+func NewServer(storage storage.Storage) *Server {
+	return &Server{
+		storage: storage,
+		config:  NewConfig(),
+	}
+}
+
+func NewConfig() *Config {
+	cfg := &Config{}
+	flag.StringVar(&cfg.Addr, "a", "localhost:8080", "HTTP server address")
+	flag.Parse()
+	return cfg
+}
+
+func (s *Server) Run() error {
+
+	router := chi.NewRouter()
+	router.Use(middleware.StripSlashes)
+	router.Post("/update/{type}/{name}/{value}", s.UpdateMetricHandler)
+	router.Get("/value/{type}/{name}", s.GetMetricHandler)
+	router.Get("/", s.ListMetricsHandler)
+
+	return http.ListenAndServe(s.config.Addr, router)
+}
 
 func (s *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 	typ := chi.URLParam(r, "type")
