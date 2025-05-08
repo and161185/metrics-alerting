@@ -41,30 +41,30 @@ func UpdateMetricHandler(storage storage.Storage) http.HandlerFunc {
 	}
 }
 
-func getMetrics(urlPath string) (*model.Metric, error) {
+func getMetrics(urlPath string) (model.Metric, error) {
 
 	urlParts := strings.Split(urlPath, "/")
 	if len(urlParts) != 4 {
-		return nil, ErrInvalidUrl
+		return model.Metric{}, ErrInvalidUrl
 	}
 
 	metricsType := model.MetricType(urlParts[1])
 	if invalidMetricsType(metricsType) {
-		return nil, ErrInvalidType
+		return model.Metric{}, ErrInvalidType
 	}
 
 	metricsName := urlParts[2]
 	if invalidMetricsName(metricsName) {
-		return nil, ErrInvalidName
+		return model.Metric{}, ErrInvalidName
 	}
 
 	metricsValue, err := getMetricsValue(urlParts[3], metricsType)
 	if err != nil {
-		return nil, fmt.Errorf("invalid value: %w", err)
+		return model.Metric{}, fmt.Errorf("invalid value: %w", err)
 	}
 
 	result := model.Metric{ID: metricsName, Type: metricsType, Value: metricsValue}
-	return &result, nil
+	return result, nil
 }
 
 func invalidMetricsType(t model.MetricType) bool {
