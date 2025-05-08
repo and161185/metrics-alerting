@@ -8,9 +8,10 @@ import (
 
 	"github.com/and161185/metrics-alerting/cmd/server/metrics"
 	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/server/middleware"
 	"github.com/and161185/metrics-alerting/model"
 	"github.com/and161185/metrics-alerting/storage"
-	"github.com/go-chi/chi/middleware"
+	chiMiddleware "github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -35,7 +36,8 @@ func NewServer(storage Storage, config *config.ServerConfig) *Server {
 func (srv *Server) Run() error {
 
 	router := chi.NewRouter()
-	router.Use(middleware.StripSlashes)
+	router.Use(chiMiddleware.StripSlashes)
+	router.Use(middleware.LogMiddelware(srv.config.Logger))
 	router.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
 	router.Get("/value/{type}/{name}", srv.GetMetricHandler)
 	router.Get("/", srv.ListMetricsHandler)
