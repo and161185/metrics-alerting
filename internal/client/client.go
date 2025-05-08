@@ -44,7 +44,7 @@ func (clnt *Client) Run() error {
 		time.Sleep(1 * time.Second)
 		tics++
 
-		fmt.Println("Tick:", tics)
+		log.Println("Tick:", tics)
 
 		if tics%pollInterval == 0 {
 			for _, m := range collector.CollectRuntimeMetrics() {
@@ -60,7 +60,7 @@ func (clnt *Client) Run() error {
 				log.Printf("failed to send metrics: %v", err)
 				continue
 			}
-			fmt.Println("SendToServer success")
+			log.Println("SendToServer success")
 			collector.ResetPollCount()
 		}
 	}
