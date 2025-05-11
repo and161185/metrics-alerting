@@ -46,9 +46,16 @@ func TestCollectRuntimeMetrics(t *testing.T) {
 
 func getMetricValue(metrics []model.Metric, id string) float64 {
 	for _, m := range metrics {
-		if m.ID == id {
-			return m.Value
+		if m.ID != id {
+			continue
 		}
+		if m.Type == model.Gauge && m.Value != nil {
+			return *m.Value
+		}
+		if m.Type == model.Counter && m.Delta != nil {
+			return float64(*m.Delta)
+		}
+
 	}
 	return -1
 }

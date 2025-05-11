@@ -1,6 +1,8 @@
 package client
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -78,19 +80,24 @@ func (clnt *Client) SendToServer() error {
 	}
 
 	for _, metric := range all {
-		url := fmt.Sprintf(
-			"%s/update/%s/%s/%v",
-			serverAddr,
-			metric.Type,
-			metric.ID,
-			metric.Value,
-		)
+		/*
+			url := fmt.Sprintf(
+				"%s/update/%s/%s/%v",
+				serverAddr,
+				metric.Type,
+				metric.ID,
+				metric.Value,
+			)
+		*/
 
-		req, err := http.NewRequest(http.MethodPost, url, nil)
+		url := fmt.Sprintf("%s/update/", serverAddr)
+
+		body, _ := json.Marshal(metric)
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("creating request for %s: %w", metric.ID, err)
 		}
-		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("Content-Type", "application/json")
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
