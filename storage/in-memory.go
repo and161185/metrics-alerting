@@ -21,15 +21,18 @@ func NewMemStorage() *MemStorage {
 // TODO: sync access if used concurrently
 
 func (store *MemStorage) Save(m *model.Metric) error {
-	_, ok := store.metrics[m.ID]
+	existing, ok := store.metrics[m.ID]
 	if !ok {
 		store.metrics[m.ID] = m
 	} else if m.Type == model.Gauge {
 		store.metrics[m.ID] = m
-	} else if m.Type == model.Counter {
-		existing := store.metrics[m.ID]
-		existing.Value += m.Value
-		store.metrics[m.ID] = existing
+	} else if m.Type == model.Counter && m.Delta != nil {
+		if existing.Delta != nil {
+			*existing.Delta += *m.Delta
+		} else {
+			v := *m.Delta
+			existing.Delta = &v
+		}
 	}
 	return nil
 }
