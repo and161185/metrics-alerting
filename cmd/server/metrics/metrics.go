@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 )
 
@@ -34,7 +35,12 @@ func NewMetric(typ, name, val string) (*model.Metric, error) {
 		return &model.Metric{}, fmt.Errorf("invalid value: %w", err)
 	}
 
-	metric.Value = &metricsValue
+	if typ == string(model.Gauge) {
+		metric.Value = &metricsValue
+	}
+	if typ == string(model.Counter) {
+		metric.Delta = utils.I64Ptr(int64(metricsValue))
+	}
 
 	return metric, nil
 }

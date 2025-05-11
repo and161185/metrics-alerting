@@ -189,8 +189,8 @@ func TestGetMetricHandlerJSON(t *testing.T) {
 		log.Fatalf("wrong response status: want %d get %d", http.StatusOK, response.StatusCode)
 	}
 
-	var m_response model.Metric
-	err = json.NewDecoder(response.Body).Decode(&m_response)
+	var mResponse model.Metric
+	err = json.NewDecoder(response.Body).Decode(&mResponse)
 	if err != nil {
 		t.Fatalf("invalid JSON response: %v", err)
 	}

@@ -126,8 +126,26 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	_, err = fmt.Fprintf(w, "%v", *storedMetric.Value)
+	switch typ {
+	case string(model.Gauge):
+		if storedMetric.Value == nil {
+			http.NotFound(w, r)
+			return
+		}
+		_, err = fmt.Fprintf(w, "%v", *storedMetric.Value)
+
+	case string(model.Counter):
+		if storedMetric.Delta == nil {
+			http.NotFound(w, r)
+			return
+		}
+		_, err = fmt.Fprintf(w, "%v", *storedMetric.Delta)
+
+	default:
+		http.Error(w, "unsupported metric type", http.StatusBadRequest)
+		return
+	}
+
 	if err != nil {
 		log.Printf("failed to write response body for metric [name=%s]: %v", name, err)
 	}
