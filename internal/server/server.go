@@ -38,7 +38,9 @@ func (srv *Server) Run() error {
 
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.StripSlashes)
-	router.Use(middleware.LogMiddelware(srv.config.Logger))
+	router.Use(middleware.LogMiddleware(srv.config.Logger))
+	router.Use(middleware.DecompressMiddleware)
+	router.Use(middleware.CompressMiddleware)
 	router.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
 	router.Post("/update", srv.UpdateMetricHandlerJSON)
 	router.Get("/value/{type}/{name}", srv.GetMetricHandler)
@@ -189,7 +191,6 @@ func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
 	_, err = fmt.Fprintln(w, "<html><body><ul>")
 	if err != nil {
 		log.Printf("failed to start response body for list metrics: %v", err)

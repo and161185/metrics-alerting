@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -80,24 +81,25 @@ func (clnt *Client) SendToServer() error {
 	}
 
 	for _, metric := range all {
-		/*
-			url := fmt.Sprintf(
-				"%s/update/%s/%s/%v",
-				serverAddr,
-				metric.Type,
-				metric.ID,
-				metric.Value,
-			)
-		*/
 
 		url := fmt.Sprintf("%s/update/", serverAddr)
 
 		body, _ := json.Marshal(metric)
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+
+		var compressedBody bytes.Buffer
+		zw := gzip.NewWriter(&compressedBody)
+		defer zw.Close()
+
+		if _, err := zw.Write(body); err != nil {
+			return fmt.Errorf("compressing %s: %w", metric.ID, err)
+		}
+
+		req, err := http.NewRequest(http.MethodPost, url, &compressedBody)
 		if err != nil {
 			return fmt.Errorf("creating request for %s: %w", metric.ID, err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
