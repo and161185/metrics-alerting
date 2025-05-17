@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -86,15 +85,17 @@ func (clnt *Client) SendToServer() error {
 
 		body, _ := json.Marshal(metric)
 
-		var compressedBody bytes.Buffer
-		zw := gzip.NewWriter(&compressedBody)
-		defer zw.Close()
+		/*
+			var compressedBody bytes.Buffer
+			zw := gzip.NewWriter(&compressedBody)
+			defer zw.Close()
 
-		if _, err := zw.Write(body); err != nil {
-			return fmt.Errorf("compressing %s: %w", metric.ID, err)
-		}
+			if _, err := zw.Write(body); err != nil {
+				return fmt.Errorf("compressing %s: %w", metric.ID, err)
+			}
+		*/
 
-		req, err := http.NewRequest(http.MethodPost, url, &compressedBody)
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("creating request for %s: %w", metric.ID, err)
 		}

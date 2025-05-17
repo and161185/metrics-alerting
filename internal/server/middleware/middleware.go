@@ -3,6 +3,7 @@ package middleware
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -18,13 +19,22 @@ func DecompressMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		gr, err := gzip.NewReader(r.Body)
+		bodyBytes, err := io.ReadAll(r.Body)
 		if err != nil {
-			http.Error(w, "bad gzip", http.StatusBadRequest)
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+
+		gr, err := gzip.NewReader(bytes.NewReader(bodyBytes))
+		if err != nil {
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			next.ServeHTTP(w, r)
 			return
 		}
 		defer gr.Close()
-		r.Body = io.NopCloser(gr)
+
+		r.Body = gr
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -36,34 +46,32 @@ func CompressMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		gzw := &gzipResponseWriter{ResponseWriter: w}
-		next.ServeHTTP(gzw, r)
+		grw := &gzipResponseWriter{ResponseWriter: w}
+		defer grw.Close()
+
+		next.ServeHTTP(grw, r)
 	})
 }
 
 type gzipResponseWriter struct {
 	http.ResponseWriter
-	buf     *bytes.Buffer
-	written bool
+	writer *gzip.Writer
 }
 
 func (w *gzipResponseWriter) Write(b []byte) (int, error) {
-	if !w.written {
-		ct := w.Header().Get("Content-Type")
-		if strings.Contains(ct, "application/json") || strings.Contains(ct, "text/html") {
-			w.Header().Set("Content-Encoding", "gzip")
-			var compressed bytes.Buffer
-			gz := gzip.NewWriter(&compressed)
-			if _, err := gz.Write(b); err != nil {
-				return 0, err
-			}
-			gz.Close()
-			w.written = true
-			return w.ResponseWriter.Write(compressed.Bytes())
-		}
+	if w.writer == nil {
+		w.Header().Set("Content-Encoding", "gzip")
+		gz := gzip.NewWriter(w.ResponseWriter)
+		w.writer = gz
 	}
-	w.written = true
-	return w.ResponseWriter.Write(b)
+	return w.writer.Write(b)
+}
+
+func (w *gzipResponseWriter) Close() error {
+	if w.writer != nil {
+		return w.writer.Close()
+	}
+	return nil
 }
 
 func LogMiddleware(logger *zap.SugaredLogger) func(next http.Handler) http.Handler {
@@ -76,6 +84,12 @@ func LogMiddleware(logger *zap.SugaredLogger) func(next http.Handler) http.Handl
 				logger.Errorf("failed to read request body: %v", err)
 			}
 			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			headers := fmt.Sprintf("%v", r.Header)
+
+			loggerBody := "<skipped>"
+			if len(bodyBytes) > 0 && isProbablyText(bodyBytes) {
+				loggerBody = string(bodyBytes)
+			}
 
 			lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(lrw, r)
@@ -83,8 +97,8 @@ func LogMiddleware(logger *zap.SugaredLogger) func(next http.Handler) http.Handl
 			duration := time.Since(start)
 
 			logger.Infof(
-				"method=%s uri=%s status=%d size=%d duration=%s body=%s",
-				r.Method, r.RequestURI, lrw.statusCode, lrw.size, duration, string(bodyBytes),
+				"method=%s uri=%s status=%d size=%d duration=%s body=%s headers=%s",
+				r.Method, r.RequestURI, lrw.statusCode, lrw.size, duration, loggerBody, headers,
 			)
 		})
 	}
@@ -105,4 +119,13 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	n, err := lrw.ResponseWriter.Write(b)
 	lrw.size += n
 	return n, err
+}
+
+func isProbablyText(b []byte) bool {
+	for _, c := range b {
+		if c == 0 || c > 127 {
+			return false
+		}
+	}
+	return true
 }
