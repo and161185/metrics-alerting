@@ -69,7 +69,7 @@ func TestNewMetric(t *testing.T) {
 			}
 			require.NoError(t, err)
 			if tc.id != m.ID {
-				t.Errorf("metric value error: need %f get %f", tc.wantVal, m.Value)
+				t.Errorf("metric value error: need %f get %f", tc.wantVal, *m.Value)
 			}
 		})
 	}
