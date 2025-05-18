@@ -1,11 +1,16 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/and161185/metrics-alerting/cmd/server/metrics"
 	"github.com/and161185/metrics-alerting/internal/config"
@@ -20,6 +25,8 @@ type Storage interface {
 	Save(metric *model.Metric) error
 	Get(metric *model.Metric) (*model.Metric, error)
 	GetAll() (map[string]*model.Metric, error)
+	SaveToFile(filePath string) error
+	LoadFromFile(filePath string) error
 }
 
 type Server struct {
@@ -34,8 +41,7 @@ func NewServer(storage Storage, config *config.ServerConfig) *Server {
 	}
 }
 
-func (srv *Server) Run() error {
-
+func (srv *Server) buildRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.StripSlashes)
 	router.Use(middleware.LogMiddleware(srv.config.Logger))
@@ -46,8 +52,52 @@ func (srv *Server) Run() error {
 	router.Get("/value/{type}/{name}", srv.GetMetricHandler)
 	router.Post("/value", srv.GetMetricHandlerJSON)
 	router.Get("/", srv.ListMetricsHandler)
+	return router
+}
 
-	return http.ListenAndServe(srv.config.Addr, router)
+func (srv *Server) Run() error {
+	router := srv.buildRouter()
+
+	server := &http.Server{
+		Addr:    srv.config.Addr,
+		Handler: router,
+	}
+
+	if srv.config.Restore {
+		if err := srv.storage.LoadFromFile(srv.config.FileStoragePath); err != nil {
+			srv.config.Logger.Warnf("failed to restore metrics from file: %v", err)
+		}
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			srv.config.Logger.Fatalf("server error: %v", err)
+		}
+	}()
+
+	if srv.config.StoreInterval > 0 {
+		ticker := time.NewTicker(time.Duration(srv.config.StoreInterval) * time.Second)
+		go func() {
+			for range ticker.C {
+				if err := srv.storage.SaveToFile(srv.config.FileStoragePath); err != nil {
+					srv.config.Logger.Errorf("auto-save failed: %v", err)
+				}
+			}
+		}()
+	}
+
+	<-ctx.Done()
+
+	if err := srv.storage.SaveToFile(srv.config.FileStoragePath); err != nil {
+		log.Printf("save failed: %v", err)
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return server.Shutdown(shutdownCtx)
 }
 
 func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
@@ -68,6 +118,13 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	if srv.config.StoreInterval == 0 {
+		if err := srv.storage.SaveToFile(srv.config.FileStoragePath); err != nil {
+			srv.config.Logger.Errorf("failed to-save file %s: %v", srv.config.FileStoragePath, err)
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -96,6 +153,12 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 		log.Printf("failed to save metric [name=%s]: %v", metric.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	if srv.config.StoreInterval == 0 {
+		if err := srv.storage.SaveToFile(srv.config.FileStoragePath); err != nil {
+			srv.config.Logger.Errorf("failed to-save file %s: %v", srv.config.FileStoragePath, err)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
