@@ -34,7 +34,7 @@ func NewServerConfig() *ServerConfig {
 	cfg := &ServerConfig{}
 	flag.StringVar(&cfg.Addr, "a", "localhost:8080", "HTTP server address")
 	flag.IntVar(&cfg.StoreInterval, "i", 300, "store interval")
-	flag.StringVar(&cfg.FileStoragePath, "f", "./metrics.json", "path to metrics file")
+	flag.StringVar(&cfg.FileStoragePath, "f", "./tmp/metrics-db.json", "path to metrics file")
 	flag.BoolVar(&cfg.Restore, "r", true, "load metrics from last file")
 	flag.Parse()
 

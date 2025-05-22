@@ -112,17 +112,11 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = srv.storage.Save(metric)
+	err = srv.SaveToStorage(metric)
 	if err != nil {
-		log.Printf("failed to save metric [name=%s]: %v", name, err)
+		log.Printf("failed to save metric [name=%s]: %v", metric.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-
-	if srv.config.StoreInterval == 0 {
-		if err := srv.storage.SaveToFile(srv.config.FileStoragePath); err != nil {
-			srv.config.Logger.Errorf("failed to-save file %s: %v", srv.config.FileStoragePath, err)
-		}
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -148,11 +142,24 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = srv.storage.Save(&metric)
+	err = srv.SaveToStorage(&metric)
 	if err != nil {
 		log.Printf("failed to save metric [name=%s]: %v", metric.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(metric); err != nil {
+		log.Printf("failed to write response JSON: %v", err)
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+	}
+}
+
+func (srv *Server) SaveToStorage(metric *model.Metric) error {
+	err := srv.storage.Save(metric)
+	if err != nil {
+		return err
 	}
 
 	if srv.config.StoreInterval == 0 {
@@ -161,11 +168,7 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(metric); err != nil {
-		log.Printf("failed to write response JSON: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-	}
+	return nil
 }
 
 func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {

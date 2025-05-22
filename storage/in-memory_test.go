@@ -65,6 +65,13 @@ func TestSaveAndLoad(t *testing.T) {
 
 	// создаём новое хранилище и загружаем
 	newStorage := NewMemStorage()
+	m2 := model.Metric{
+		ID:    "other",
+		Type:  "gauge",
+		Value: utils.F64Ptr(999.99),
+	}
+	_ = newStorage.Save(&m2)
+
 	if err := newStorage.LoadFromFile(file); err != nil {
 		t.Fatalf("LoadFromFile failed: %v", err)
 	}
@@ -77,4 +84,10 @@ func TestSaveAndLoad(t *testing.T) {
 	if restored.Value == nil || *restored.Value != 123.45 {
 		t.Errorf("wrong value: got %+v", restored.Value)
 	}
+
+	restored2, _ := newStorage.Get(&model.Metric{ID: "other", Type: "gauge"})
+	if restored2.Value == nil || *restored2.Value != 999.99 {
+		t.Errorf("existing metric lost: %+v", restored2)
+	}
+
 }
