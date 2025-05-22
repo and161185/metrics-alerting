@@ -23,7 +23,10 @@ type ServerConfig struct {
 }
 
 func NewServerConfig() *ServerConfig {
-	logger := zap.Must(zap.NewProduction())
+	logCfg := zap.NewProductionConfig()
+	logCfg.OutputPaths = []string{"stdout", "server.log"}
+
+	logger := zap.Must(logCfg.Build())
 
 	cfg := &ServerConfig{}
 	flag.StringVar(&cfg.Addr, "a", "localhost:8080", "HTTP server address")

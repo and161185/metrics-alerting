@@ -80,24 +80,27 @@ func (clnt *Client) SendToServer() error {
 	}
 
 	for _, metric := range all {
-		/*
-			url := fmt.Sprintf(
-				"%s/update/%s/%s/%v",
-				serverAddr,
-				metric.Type,
-				metric.ID,
-				metric.Value,
-			)
-		*/
 
 		url := fmt.Sprintf("%s/update/", serverAddr)
 
 		body, _ := json.Marshal(metric)
+
+		/*
+			var compressedBody bytes.Buffer
+			zw := gzip.NewWriter(&compressedBody)
+			defer zw.Close()
+
+			if _, err := zw.Write(body); err != nil {
+				return fmt.Errorf("compressing %s: %w", metric.ID, err)
+			}
+		*/
+
 		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return fmt.Errorf("creating request for %s: %w", metric.ID, err)
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
 
 		resp, err := httpClient.Do(req)
 		if err != nil {
