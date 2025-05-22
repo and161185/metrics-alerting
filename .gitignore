@@ -13,6 +13,7 @@
 
 #logs
 *.log
+temp_file
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out

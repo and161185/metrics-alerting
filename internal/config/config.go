@@ -18,8 +18,11 @@ type ClientConfig struct {
 }
 
 type ServerConfig struct {
-	Addr   string
-	Logger *zap.SugaredLogger
+	Addr            string
+	Logger          *zap.SugaredLogger
+	StoreInterval   int
+	FileStoragePath string
+	Restore         bool
 }
 
 func NewServerConfig() *ServerConfig {
@@ -30,6 +33,9 @@ func NewServerConfig() *ServerConfig {
 
 	cfg := &ServerConfig{}
 	flag.StringVar(&cfg.Addr, "a", "localhost:8080", "HTTP server address")
+	flag.IntVar(&cfg.StoreInterval, "i", 300, "store interval")
+	flag.StringVar(&cfg.FileStoragePath, "f", "./tmp/metrics-db.json", "path to metrics file")
+	flag.BoolVar(&cfg.Restore, "r", true, "load metrics from last file")
 	flag.Parse()
 
 	cfg.Logger = logger.Sugar()
@@ -42,6 +48,30 @@ func NewServerConfig() *ServerConfig {
 func ReadServerEnvironment(cfg *ServerConfig) {
 	if addr := os.Getenv("ADDRESS"); addr != "" {
 		cfg.Addr = addr
+	}
+
+	storeIntervalEnv := os.Getenv("STORE_INTERVAL")
+	if storeIntervalEnv != "" {
+		v, err := strconv.Atoi(storeIntervalEnv)
+		if err == nil {
+			cfg.StoreInterval = v
+		} else {
+			log.Printf("invalid STORE_INTERVAL env var: %v", err)
+		}
+	}
+
+	if fsp := os.Getenv("FILE_STORAGE_PATH"); fsp != "" {
+		cfg.FileStoragePath = fsp
+	}
+
+	restoreEnv := os.Getenv("RESTORE")
+	if restoreEnv != "" {
+		v, err := strconv.ParseBool(restoreEnv)
+		if err == nil {
+			cfg.Restore = v
+		} else {
+			log.Printf("invalid RESTORE env var: %v", err)
+		}
 	}
 }
 

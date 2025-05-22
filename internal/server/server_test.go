@@ -10,11 +10,26 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 	"github.com/and161185/metrics-alerting/storage"
 	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
 )
+
+func NewTestServer() Server {
+	server := Server{
+		storage: storage.NewMemStorage(),
+		config: &config.ServerConfig{
+			StoreInterval:   1,            // чтобы не было синхронного SaveToFile()
+			FileStoragePath: "./dev-null", // безопасно
+			Logger:          zap.NewNop().Sugar(),
+		},
+	}
+
+	return server
+}
 
 func TestUpdateMetricHandler(t *testing.T) {
 	tests := []struct {
@@ -35,7 +50,7 @@ func TestUpdateMetricHandler(t *testing.T) {
 		t.Run(v.name, func(t *testing.T) {
 
 			r := chi.NewRouter()
-			server := Server{storage: storage.NewMemStorage()}
+			server := NewTestServer()
 			r.Post("/update/{type}/{name}/{value}", server.UpdateMetricHandler)
 
 			req := httptest.NewRequest(v.method, v.url, nil)
@@ -74,7 +89,7 @@ func TestUpdateMetricHandlerJSON(t *testing.T) {
 		t.Run(v.name, func(t *testing.T) {
 
 			r := chi.NewRouter()
-			server := Server{storage: storage.NewMemStorage()}
+			server := NewTestServer()
 			r.Post("/update/", server.UpdateMetricHandlerJSON)
 
 			body, _ := json.Marshal(v.metric)
