@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 )
 
@@ -19,11 +20,7 @@ func NewEmptyMetric(typ, name string) (*model.Metric, error) {
 		return &model.Metric{}, ErrInvalidType
 	}
 
-	if invalidMetricsName(name) {
-		return &model.Metric{}, ErrInvalidName
-	}
-
-	return &model.Metric{ID: name, Type: metricsType, Value: 0}, nil
+	return &model.Metric{ID: name, Type: metricsType}, nil
 }
 
 func NewMetric(typ, name, val string) (*model.Metric, error) {
@@ -38,18 +35,32 @@ func NewMetric(typ, name, val string) (*model.Metric, error) {
 		return &model.Metric{}, fmt.Errorf("invalid value: %w", err)
 	}
 
-	metric.Value = metricsValue
+	if typ == string(model.Gauge) {
+		metric.Value = &metricsValue
+	}
+	if typ == string(model.Counter) {
+		metric.Delta = utils.I64Ptr(int64(metricsValue))
+	}
 
 	return metric, nil
+}
+
+func CheckMetric(m *model.Metric) error {
+	if m.Type == model.Counter && m.Delta == nil {
+		return errors.New("delta required for counter")
+	}
+	if m.Type == model.Gauge && m.Value == nil {
+		return errors.New("value required for gauge")
+	}
+	if m.Type != model.Gauge && m.Type != model.Counter {
+		return errors.New("invalid type")
+	}
+	return nil
 }
 
 func invalidMetricsType(typ model.MetricType) bool {
 	result := typ != model.Gauge && typ != model.Counter
 	return result
-}
-
-func invalidMetricsName(name string) bool {
-	return false
 }
 
 func getMetricsValue(strValue string, metricsType model.MetricType) (float64, error) {

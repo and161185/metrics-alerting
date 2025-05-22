@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -39,7 +40,9 @@ func (srv *Server) Run() error {
 	router.Use(chiMiddleware.StripSlashes)
 	router.Use(middleware.LogMiddelware(srv.config.Logger))
 	router.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
+	router.Post("/update", srv.UpdateMetricHandlerJSON)
 	router.Get("/value/{type}/{name}", srv.GetMetricHandler)
+	router.Post("/value", srv.GetMetricHandlerJSON)
 	router.Get("/", srv.ListMetricsHandler)
 
 	return http.ListenAndServe(srv.config.Addr, router)
@@ -66,6 +69,40 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
+
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var metric model.Metric
+	err := json.NewDecoder(r.Body).Decode(&metric)
+	if err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	err = metrics.CheckMetric(&metric)
+	if err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	err = srv.storage.Save(&metric)
+	if err != nil {
+		log.Printf("failed to save metric [name=%s]: %v", metric.ID, err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(metric); err != nil {
+		log.Printf("failed to write response JSON: %v", err)
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+	}
+}
+
 func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 	typ := chi.URLParam(r, "type")
 	name := chi.URLParam(r, "name")
@@ -89,10 +126,56 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	_, err = fmt.Fprintf(w, "%v", storedMetric.Value)
+	switch typ {
+	case string(model.Gauge):
+		if storedMetric.Value == nil {
+			http.NotFound(w, r)
+			return
+		}
+		_, err = fmt.Fprintf(w, "%v", *storedMetric.Value)
+
+	case string(model.Counter):
+		if storedMetric.Delta == nil {
+			http.NotFound(w, r)
+			return
+		}
+		_, err = fmt.Fprintf(w, "%v", *storedMetric.Delta)
+
+	default:
+		http.Error(w, "unsupported metric type", http.StatusBadRequest)
+		return
+	}
+
 	if err != nil {
 		log.Printf("failed to write response body for metric [name=%s]: %v", name, err)
+	}
+}
+
+func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var reqMetric model.Metric
+	if err := json.NewDecoder(r.Body).Decode(&reqMetric); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	stored, err := srv.storage.Get(&reqMetric)
+	if err != nil {
+		if errors.Is(err, storage.ErrMetricNotFound) {
+			http.NotFound(w, r)
+		} else {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(stored); err != nil {
+		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 	"github.com/and161185/metrics-alerting/storage"
 )
@@ -25,7 +26,7 @@ func TestSendToServer(t *testing.T) {
 	defer ts.Close()
 
 	st := storage.NewMemStorage()
-	m := model.Metric{ID: "TestMetric", Type: model.Gauge, Value: 42.0}
+	m := model.Metric{ID: "TestMetric", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
 	err := st.Save(&m)
 	if err != nil {
 		t.Fatalf("Save in storage metric %s failed: %v", m.ID, err)

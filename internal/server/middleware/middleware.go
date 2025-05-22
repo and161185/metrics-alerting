@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"bytes"
+	"io"
 	"net/http"
 	"time"
 
@@ -12,13 +14,21 @@ func LogMiddelware(logger *zap.SugaredLogger) func(next http.Handler) http.Handl
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				logger.Errorf("failed to read request body: %v", err)
+			}
+			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
 			lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(lrw, r)
 
 			duration := time.Since(start)
 
-			logger.Infof("method=%s uri=%s status=%d size=%d duration=%s",
-				r.Method, r.RequestURI, lrw.statusCode, lrw.size, duration)
+			logger.Infof(
+				"method=%s uri=%s status=%d size=%d duration=%s body=%s",
+				r.Method, r.RequestURI, lrw.statusCode, lrw.size, duration, string(bodyBytes),
+			)
 		})
 	}
 }
