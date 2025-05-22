@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 type ClientConfig struct {
@@ -16,13 +18,18 @@ type ClientConfig struct {
 }
 
 type ServerConfig struct {
-	Addr string
+	Addr   string
+	Logger *zap.SugaredLogger
 }
 
 func NewServerConfig() *ServerConfig {
+	logger := zap.Must(zap.NewProduction())
+
 	cfg := &ServerConfig{}
 	flag.StringVar(&cfg.Addr, "a", "localhost:8080", "HTTP server address")
 	flag.Parse()
+
+	cfg.Logger = logger.Sugar()
 
 	ReadServerEnvironment(cfg)
 
