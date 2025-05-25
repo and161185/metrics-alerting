@@ -13,14 +13,14 @@ import (
 	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
-	"github.com/and161185/metrics-alerting/storage"
+	"github.com/and161185/metrics-alerting/storage/inmemory"
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
 func NewTestServer() Server {
 	server := Server{
-		storage: storage.NewMemStorage(),
+		storage: inmemory.NewMemStorage(),
 		config: &config.ServerConfig{
 			StoreInterval:   1,            // чтобы не было синхронного SaveToFile()
 			FileStoragePath: "./dev-null", // безопасно
@@ -137,7 +137,7 @@ func TestUpdateMetricHandlerJSON(t *testing.T) {
 }
 
 func TestGetMetricHandler(t *testing.T) {
-	st := storage.NewMemStorage()
+	st := inmemory.NewMemStorage()
 
 	m := model.Metric{ID: "test", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
 	err := st.Save(&m)
@@ -173,7 +173,7 @@ func TestGetMetricHandler(t *testing.T) {
 }
 
 func TestGetMetricHandlerJSON(t *testing.T) {
-	st := storage.NewMemStorage()
+	st := inmemory.NewMemStorage()
 
 	m := model.Metric{ID: "test", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
 	err := st.Save(&m)
@@ -215,7 +215,7 @@ func TestGetMetricHandlerJSON(t *testing.T) {
 }
 
 func TestListMetricsHandler(t *testing.T) {
-	st := storage.NewMemStorage()
+	st := inmemory.NewMemStorage()
 
 	m1 := model.Metric{ID: "foo", Type: model.Gauge, Value: utils.F64Ptr(1.23)}
 	err := st.Save(&m1)

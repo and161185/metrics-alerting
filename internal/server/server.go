@@ -14,9 +14,9 @@ import (
 
 	"github.com/and161185/metrics-alerting/cmd/server/metrics"
 	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/errs"
 	"github.com/and161185/metrics-alerting/internal/server/middleware"
 	"github.com/and161185/metrics-alerting/model"
-	"github.com/and161185/metrics-alerting/storage"
 	chiMiddleware "github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
 )
@@ -27,6 +27,7 @@ type Storage interface {
 	GetAll() (map[string]*model.Metric, error)
 	SaveToFile(filePath string) error
 	LoadFromFile(filePath string) error
+	Ping(ctx context.Context) error
 }
 
 type Server struct {
@@ -52,6 +53,7 @@ func (srv *Server) buildRouter() http.Handler {
 	router.Get("/value/{type}/{name}", srv.GetMetricHandler)
 	router.Post("/value", srv.GetMetricHandlerJSON)
 	router.Get("/", srv.ListMetricsHandler)
+	router.Get("/ping", srv.PingHandler)
 	return router
 }
 
@@ -184,7 +186,7 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 
 	storedMetric, err := srv.storage.Get(metric)
 	if err != nil {
-		if errors.Is(err, storage.ErrMetricNotFound) {
+		if errors.Is(err, errs.ErrMetricNotFound) {
 			log.Printf("metric not found [type=%s, name=%s]: %v", typ, name, err)
 			http.NotFound(w, r)
 			return
@@ -233,7 +235,7 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 
 	stored, err := srv.storage.Get(&reqMetric)
 	if err != nil {
-		if errors.Is(err, storage.ErrMetricNotFound) {
+		if errors.Is(err, errs.ErrMetricNotFound) {
 			http.NotFound(w, r)
 		} else {
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -273,4 +275,17 @@ func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("failed to end response body for list metrics: %v", err)
 	}
+}
+
+func (srv *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := srv.storage.Ping(ctx)
+
+	if err != nil {
+		http.Error(w, "db not available", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }

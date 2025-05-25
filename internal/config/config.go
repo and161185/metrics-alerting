@@ -23,6 +23,7 @@ type ServerConfig struct {
 	StoreInterval   int
 	FileStoragePath string
 	Restore         bool
+	DatabaseDsn     string
 }
 
 func NewServerConfig() *ServerConfig {
@@ -36,6 +37,7 @@ func NewServerConfig() *ServerConfig {
 	flag.IntVar(&cfg.StoreInterval, "i", 300, "store interval")
 	flag.StringVar(&cfg.FileStoragePath, "f", "./tmp/metrics-db.json", "path to metrics file")
 	flag.BoolVar(&cfg.Restore, "r", true, "load metrics from last file")
+	flag.StringVar(&cfg.DatabaseDsn, "d", "", "DB connection sting")
 	flag.Parse()
 
 	cfg.Logger = logger.Sugar()
@@ -62,6 +64,10 @@ func ReadServerEnvironment(cfg *ServerConfig) {
 
 	if fsp := os.Getenv("FILE_STORAGE_PATH"); fsp != "" {
 		cfg.FileStoragePath = fsp
+	}
+
+	if dbDsn := os.Getenv("DATABASE_DSN"); dbDsn != "" {
+		cfg.DatabaseDsn = dbDsn
 	}
 
 	restoreEnv := os.Getenv("RESTORE")
