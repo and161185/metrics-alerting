@@ -1,6 +1,7 @@
 package inmemory
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -9,47 +10,55 @@ import (
 )
 
 func TestMemStorage_SaveGauge(t *testing.T) {
-	st := NewMemStorage()
+	ctx := context.Background()
+
+	st := NewMemStorage(ctx)
 
 	metric := model.Metric{ID: "TestGauge", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
 
-	if err := st.Save(&metric); err != nil {
+	if err := st.Save(ctx, &metric); err != nil {
 		t.Fatalf("failed to save: %v", err)
 	}
 
-	all, _ := st.GetAll()
+	all, _ := st.GetAll(ctx)
 	if got := *all["TestGauge"].Value; got != 42.0 {
 		t.Errorf("want 42.0, got %v", got)
 	}
 }
 
 func TestMemStorage_OverwriteGauge(t *testing.T) {
-	st := NewMemStorage()
-	st.Save(&model.Metric{ID: "TestGauge", Type: model.Gauge, Value: utils.F64Ptr(42.0)})
-	st.Save(&model.Metric{ID: "TestGauge", Type: model.Gauge, Value: utils.F64Ptr(100.0)})
+	ctx := context.Background()
 
-	all, _ := st.GetAll()
+	st := NewMemStorage(ctx)
+	st.Save(ctx, &model.Metric{ID: "TestGauge", Type: model.Gauge, Value: utils.F64Ptr(42.0)})
+	st.Save(ctx, &model.Metric{ID: "TestGauge", Type: model.Gauge, Value: utils.F64Ptr(100.0)})
+
+	all, _ := st.GetAll(ctx)
 	if got := *all["TestGauge"].Value; got != 100.0 {
 		t.Errorf("overwrite failed: want 100.0, got %v", got)
 	}
 }
 
 func TestMemStorage_AccumulateCounter(t *testing.T) {
-	st := NewMemStorage()
-	st.Save(&model.Metric{ID: "TestCounter", Type: model.Counter, Delta: utils.I64Ptr(10)})
-	st.Save(&model.Metric{ID: "TestCounter", Type: model.Counter, Delta: utils.I64Ptr(5)})
+	ctx := context.Background()
 
-	all, _ := st.GetAll()
+	st := NewMemStorage(ctx)
+	st.Save(ctx, &model.Metric{ID: "TestCounter", Type: model.Counter, Delta: utils.I64Ptr(10)})
+	st.Save(ctx, &model.Metric{ID: "TestCounter", Type: model.Counter, Delta: utils.I64Ptr(5)})
+
+	all, _ := st.GetAll(ctx)
 	if got := *all["TestCounter"].Delta; got != 15 {
 		t.Errorf("accumulate failed: want 15.0, got %v", got)
 	}
 }
 
 func TestSaveAndLoad(t *testing.T) {
+	ctx := context.Background()
+
 	file := "test_metrics.json"
 	defer os.Remove(file)
 
-	storage := NewMemStorage()
+	storage := NewMemStorage(ctx)
 
 	// сохраняем одну метрику
 	m := model.Metric{
@@ -57,26 +66,26 @@ func TestSaveAndLoad(t *testing.T) {
 		Type:  "gauge",
 		Value: utils.F64Ptr(123.45),
 	}
-	_ = storage.Save(&m)
+	_ = storage.Save(ctx, &m)
 
-	if err := storage.SaveToFile(file); err != nil {
+	if err := storage.SaveToFile(ctx, file); err != nil {
 		t.Fatalf("SaveToFile failed: %v", err)
 	}
 
 	// создаём новое хранилище и загружаем
-	newStorage := NewMemStorage()
+	newStorage := NewMemStorage(ctx)
 	m2 := model.Metric{
 		ID:    "other",
 		Type:  "gauge",
 		Value: utils.F64Ptr(999.99),
 	}
-	_ = newStorage.Save(&m2)
+	_ = newStorage.Save(ctx, &m2)
 
-	if err := newStorage.LoadFromFile(file); err != nil {
+	if err := newStorage.LoadFromFile(ctx, file); err != nil {
 		t.Fatalf("LoadFromFile failed: %v", err)
 	}
 
-	restored, err := newStorage.Get(&m)
+	restored, err := newStorage.Get(ctx, &m)
 	if err != nil {
 		t.Fatalf("metric not restored: %v", err)
 	}
@@ -85,7 +94,7 @@ func TestSaveAndLoad(t *testing.T) {
 		t.Errorf("wrong value: got %+v", restored.Value)
 	}
 
-	restored2, _ := newStorage.Get(&model.Metric{ID: "other", Type: "gauge"})
+	restored2, _ := newStorage.Get(ctx, &model.Metric{ID: "other", Type: "gauge"})
 	if restored2.Value == nil || *restored2.Value != 999.99 {
 		t.Errorf("existing metric lost: %+v", restored2)
 	}

@@ -17,7 +17,7 @@ type MemStorage struct {
 	mu      sync.Mutex
 }
 
-func NewMemStorage() *MemStorage {
+func NewMemStorage(ctx context.Context) *MemStorage {
 	return &MemStorage{
 		metrics: make(map[string]*model.Metric),
 	}
@@ -25,7 +25,7 @@ func NewMemStorage() *MemStorage {
 
 // TODO: sync access if used concurrently
 
-func (store *MemStorage) Save(m *model.Metric) error {
+func (store *MemStorage) Save(ctx context.Context, m *model.Metric) error {
 	existing, ok := store.metrics[m.ID]
 	if !ok {
 		store.metrics[m.ID] = m
@@ -42,7 +42,7 @@ func (store *MemStorage) Save(m *model.Metric) error {
 	return nil
 }
 
-func (store *MemStorage) Get(m *model.Metric) (*model.Metric, error) {
+func (store *MemStorage) Get(ctx context.Context, m *model.Metric) (*model.Metric, error) {
 	val, ok := store.metrics[m.ID]
 
 	if !ok {
@@ -51,7 +51,7 @@ func (store *MemStorage) Get(m *model.Metric) (*model.Metric, error) {
 	return val, nil
 }
 
-func (store *MemStorage) GetAll() (map[string]*model.Metric, error) {
+func (store *MemStorage) GetAll(ctx context.Context) (map[string]*model.Metric, error) {
 	result := make(map[string]*model.Metric, len(store.metrics))
 	for k, v := range store.metrics {
 		result[k] = v
@@ -59,11 +59,11 @@ func (store *MemStorage) GetAll() (map[string]*model.Metric, error) {
 	return result, nil
 }
 
-func (store *MemStorage) SaveToFile(filePath string) error {
+func (store *MemStorage) SaveToFile(ctx context.Context, filePath string) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	metrics, err := store.GetAll()
+	metrics, err := store.GetAll(ctx)
 
 	if err != nil {
 		return fmt.Errorf("failed to get metrics: %w", err)
@@ -87,7 +87,7 @@ func (store *MemStorage) SaveToFile(filePath string) error {
 	return nil
 }
 
-func (store *MemStorage) LoadFromFile(filePath string) error {
+func (store *MemStorage) LoadFromFile(ctx context.Context, filePath string) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -102,7 +102,7 @@ func (store *MemStorage) LoadFromFile(filePath string) error {
 	}
 
 	for _, m := range metrics {
-		if err := store.Save(m); err != nil {
+		if err := store.Save(ctx, m); err != nil {
 			return fmt.Errorf("failed to restore metric %s: %w", m.ID, err)
 		}
 	}

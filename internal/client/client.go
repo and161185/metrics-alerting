@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,8 +16,8 @@ import (
 )
 
 type Storage interface {
-	Save(metric *model.Metric) error
-	GetAll() (map[string]*model.Metric, error)
+	Save(ctx context.Context, metric *model.Metric) error
+	GetAll(ctx context.Context) (map[string]*model.Metric, error)
 }
 
 type Client struct {
@@ -34,7 +35,7 @@ func NewClient(storage Storage, config *config.ClientConfig) *Client {
 	}
 }
 
-func (clnt *Client) Run() error {
+func (clnt *Client) Run(ctx context.Context) error {
 
 	store := clnt.storage
 	pollInterval := clnt.config.PollInterval
@@ -50,7 +51,7 @@ func (clnt *Client) Run() error {
 
 		if tics%pollInterval == 0 {
 			for _, m := range collector.CollectRuntimeMetrics() {
-				err := store.Save(&m)
+				err := store.Save(ctx, &m)
 				if err != nil {
 					log.Printf("failed to save metric [type=%s, name=%s]: %v", m.Type, m.ID, err)
 				}
@@ -58,7 +59,7 @@ func (clnt *Client) Run() error {
 		}
 
 		if tics%reportInterval == 0 {
-			if err := clnt.SendToServer(); err != nil {
+			if err := clnt.SendToServer(ctx); err != nil {
 				log.Printf("failed to send metrics: %v", err)
 				continue
 			}
@@ -68,13 +69,13 @@ func (clnt *Client) Run() error {
 	}
 }
 
-func (clnt *Client) SendToServer() error {
+func (clnt *Client) SendToServer(ctx context.Context) error {
 
 	store := clnt.storage
 	serverAddr := clnt.config.ServerAddr
 	httpClient := clnt.httpClient
 
-	all, err := store.GetAll()
+	all, err := store.GetAll(ctx)
 	if err != nil {
 		return fmt.Errorf("internal error: %w", err)
 	}
