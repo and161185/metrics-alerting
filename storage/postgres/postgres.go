@@ -77,11 +77,11 @@ func (store *PostgresStorage) Get(ctx context.Context, m *model.Metric) (*model.
 
 func (store *PostgresStorage) GetAll(ctx context.Context) (map[string]*model.Metric, error) {
 	rows, err := store.db.Query(ctx, `SELECT id, mtype, delta, value FROM metrics`)
-	defer rows.Close()
-
 	if err != nil {
 		return nil, err
 	}
+
+	defer rows.Close()
 
 	result := make(map[string]*model.Metric)
 	for rows.Next() {
