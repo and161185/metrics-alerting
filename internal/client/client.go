@@ -13,6 +13,7 @@ import (
 
 	"github.com/and161185/metrics-alerting/cmd/agent/collector"
 	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 )
 
@@ -111,7 +112,13 @@ func (clnt *Client) SendToServer(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 
-	resp, err := httpClient.Do(req)
+	var resp *http.Response
+	err = utils.WithRetry(ctx, func() error {
+		var err error
+		resp, err = httpClient.Do(req)
+		return err
+	})
+
 	if err != nil {
 		return fmt.Errorf("send request: %w", err)
 	}

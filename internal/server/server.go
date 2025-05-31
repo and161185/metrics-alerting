@@ -13,6 +13,7 @@ import (
 	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/internal/errs"
 	"github.com/and161185/metrics-alerting/internal/server/middleware"
+	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 	chiMiddleware "github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
@@ -113,7 +114,10 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = srv.SaveToStorage(ctx, metric)
+	err = utils.WithRetry(ctx, func() error {
+		return srv.SaveToStorage(ctx, metric)
+	})
+
 	if err != nil {
 		log.Printf("failed to save metric [name=%s]: %v", metric.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -144,7 +148,10 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = srv.SaveToStorage(ctx, &metric)
+	err = utils.WithRetry(ctx, func() error {
+		return srv.SaveToStorage(ctx, &metric)
+	})
+
 	if err != nil {
 		log.Printf("failed to save metric [name=%s]: %v", metric.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -188,7 +195,10 @@ func (srv *Server) UpdateArrayMetricHandlerJSON(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	err = srv.SaveBatchToStorage(ctx, metricsArray)
+	err = utils.WithRetry(ctx, func() error {
+		return srv.SaveBatchToStorage(ctx, metricsArray)
+	})
+
 	if err != nil {
 		log.Printf("failed to save metrics: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -245,7 +255,13 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storedMetric, err := srv.storage.Get(ctx, metric)
+	var storedMetric *model.Metric
+	err = utils.WithRetry(ctx, func() error {
+		var err error
+		storedMetric, err = srv.storage.Get(ctx, metric)
+		return err
+	})
+
 	if err != nil {
 		if errors.Is(err, errs.ErrMetricNotFound) {
 			log.Printf("metric not found [type=%s, name=%s]: %v", typ, name, err)
@@ -296,7 +312,13 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	stored, err := srv.storage.Get(ctx, &reqMetric)
+	var storedMetric *model.Metric
+	err := utils.WithRetry(ctx, func() error {
+		var err error
+		storedMetric, err = srv.storage.Get(ctx, &reqMetric)
+		return err
+	})
+
 	if err != nil {
 		if errors.Is(err, errs.ErrMetricNotFound) {
 			http.NotFound(w, r)
@@ -307,7 +329,7 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(stored); err != nil {
+	if err := json.NewEncoder(w).Encode(storedMetric); err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 	}
 }
@@ -315,7 +337,13 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	all, err := srv.storage.GetAll(ctx)
+	var all map[string]*model.Metric
+	err := utils.WithRetry(ctx, func() error {
+		var err error
+		all, err = srv.storage.GetAll(ctx)
+		return err
+	})
+
 	if err != nil {
 		log.Printf("failed to get all metrics from storage: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -347,7 +375,9 @@ func (srv *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	err := srv.storage.Ping(ctx)
+	err := utils.WithRetry(ctx, func() error {
+		return srv.storage.Ping(ctx)
+	})
 
 	if err != nil {
 		http.Error(w, "db not available", http.StatusInternalServerError)
