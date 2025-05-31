@@ -1,10 +1,11 @@
 package client
 
 import (
+	"compress/gzip"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,11 +19,21 @@ func TestSendToServer(t *testing.T) {
 	ctx := context.Background()
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.URL.Path, "/update/") {
+		if r.URL.Path != "/updates/" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Method != http.MethodPost {
 			t.Errorf("unexpected method: %s, want POST", r.Method)
+		}
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			gr, err := gzip.NewReader(r.Body)
+			if err != nil {
+				t.Errorf("gzip decode error: %v", err)
+				return
+			}
+			defer gr.Close()
+			body, _ := io.ReadAll(gr)
+			t.Logf("received: %s", string(body))
 		}
 		w.WriteHeader(http.StatusOK)
 	}))

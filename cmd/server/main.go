@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,6 +31,9 @@ func main() {
 	if err != nil {
 		config.Logger.Fatal(err)
 	}
+
+	b, _ := json.MarshalIndent(config, "", "  ")
+	config.Logger.Infof("Server config:\n%s", string(b))
 
 	srv := server.NewServer(storage, config)
 	if err := srv.Run(ctx); err != nil {

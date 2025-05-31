@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -70,7 +71,6 @@ func (clnt *Client) Run(ctx context.Context) error {
 }
 
 func (clnt *Client) SendToServer(ctx context.Context) error {
-
 	store := clnt.storage
 	serverAddr := clnt.config.ServerAddr
 	httpClient := clnt.httpClient
@@ -80,36 +80,46 @@ func (clnt *Client) SendToServer(ctx context.Context) error {
 		return fmt.Errorf("internal error: %w", err)
 	}
 
-	for _, metric := range all {
+	if len(all) == 0 {
+		return nil
+	}
 
-		url := fmt.Sprintf("%s/update/", serverAddr)
+	metrics := make([]model.Metric, 0, len(all))
+	for _, m := range all {
+		metrics = append(metrics, *m)
+	}
 
-		body, _ := json.Marshal(metric)
+	bodyRaw, err := json.Marshal(metrics)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
 
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return fmt.Errorf("creating request for %s: %w", metric.ID, err)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Content-Encoding", "gzip")
+	var body bytes.Buffer
+	zw := gzip.NewWriter(&body)
+	if _, err := zw.Write(bodyRaw); err != nil {
+		return fmt.Errorf("gzip write: %w", err)
+	}
+	if err := zw.Close(); err != nil {
+		return fmt.Errorf("gzip close: %w", err)
+	}
 
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			return fmt.Errorf("sending %s: %w", metric.ID, err)
-		}
-		_, err = io.Copy(io.Discard, resp.Body)
-		if err != nil {
-			return fmt.Errorf("getting response %s: %w", metric.ID, err)
-		}
+	url := fmt.Sprintf("%s/updates/", serverAddr)
+	req, err := http.NewRequest(http.MethodPost, url, &body)
+	if err != nil {
+		return fmt.Errorf("new request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
 
-		err = resp.Body.Close()
-		if err != nil {
-			return fmt.Errorf("response body closing %s: %w", metric.ID, err)
-		}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("send request: %w", err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
 
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("unexpected status for %s: %d", metric.ID, resp.StatusCode)
-		}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
 	}
 
 	return nil
