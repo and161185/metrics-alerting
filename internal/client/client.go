@@ -119,10 +119,13 @@ func (clnt *Client) SendToServer(ctx context.Context) error {
 		return err
 	})
 
+	if resp != nil && resp.Body != nil {
+		defer resp.Body.Close()
+	}
+
 	if err != nil {
 		return fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
