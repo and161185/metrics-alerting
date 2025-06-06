@@ -45,6 +45,17 @@ func (store *MemStorage) Save(ctx context.Context, m *model.Metric) error {
 	return nil
 }
 
+func (store *MemStorage) SaveBatch(ctx context.Context, metrics []model.Metric) error {
+	for _, m := range metrics {
+		err := store.Save(ctx, &m)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (store *MemStorage) Get(ctx context.Context, m *model.Metric) (*model.Metric, error) {
 	val, ok := store.metrics[m.ID]
 

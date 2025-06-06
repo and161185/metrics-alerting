@@ -266,3 +266,117 @@ func TestListMetricsHandler(t *testing.T) {
 	}
 
 }
+
+func TestUpdateArrayMetricHandlerJSON(t *testing.T) {
+	tests := []struct {
+		name        string
+		method      string
+		metrics     []model.Metric
+		contentType string
+		wantStatus  int
+	}{
+		{
+			name:   "valid_metrics",
+			method: http.MethodPost,
+			metrics: []model.Metric{
+				{ID: "TestGauge", Type: "gauge", Value: utils.F64Ptr(42.0)},
+				{ID: "TestCounter", Type: "counter", Delta: utils.I64Ptr(1)},
+			},
+			contentType: "application/json",
+			wantStatus:  http.StatusOK,
+		},
+		{
+			name:        "invalid_content_type",
+			method:      http.MethodPost,
+			metrics:     []model.Metric{{ID: "TestGauge", Type: "gauge", Value: utils.F64Ptr(42.0)}},
+			contentType: "text/plain",
+			wantStatus:  http.StatusUnsupportedMediaType,
+		},
+		{
+			name:        "invalid_json",
+			method:      http.MethodPost,
+			metrics:     nil, // отправим некорректный JSON
+			contentType: "application/json",
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:        "empty_array",
+			method:      http.MethodPost,
+			metrics:     []model.Metric{},
+			contentType: "application/json",
+			wantStatus:  http.StatusBadRequest,
+		},
+		{
+			name:   "invalid_counter",
+			method: http.MethodPost,
+			metrics: []model.Metric{
+				{ID: "TestGauge", Type: "gauge", Value: utils.F64Ptr(42.0)},
+				{ID: "TestCounter", Type: "counter"}, // Delta == nil
+			},
+			contentType: "application/json",
+			wantStatus:  http.StatusUnprocessableEntity,
+		},
+	}
+
+	for _, v := range tests {
+		t.Run(v.name, func(t *testing.T) {
+			r := chi.NewRouter()
+			server := NewTestServer()
+			r.Post("/updates/", server.UpdateArrayMetricHandlerJSON)
+
+			var body []byte
+			var err error
+			if v.name == "invalid_json" {
+				body = []byte("{invalid}") // некорректный JSON
+			} else {
+				body, err = json.Marshal(v.metrics)
+				if err != nil {
+					t.Fatalf("%s: failed to marshal metrics: %v", v.name, err)
+				}
+			}
+
+			req := httptest.NewRequest(v.method, "/updates/", bytes.NewReader(body))
+			req.Header.Set("Content-Type", v.contentType)
+			w := httptest.NewRecorder()
+
+			r.ServeHTTP(w, req)
+
+			response := w.Result()
+			defer func() {
+				if err := response.Body.Close(); err != nil {
+					log.Fatalf("%s: failed to close response body for url /updates/: %v", v.name, err)
+				}
+			}()
+
+			if v.wantStatus != response.StatusCode {
+				body, _ := io.ReadAll(response.Body)
+				t.Errorf("%s: wrong response status: want %d, got %d, body: %s", v.name, v.wantStatus, response.StatusCode, string(body))
+			}
+
+			if v.wantStatus == http.StatusOK {
+				// Проверяем, что метрики сохранены
+				ctx := context.Background()
+				for _, m := range v.metrics {
+					stored, err := server.storage.Get(ctx, &model.Metric{ID: m.ID, Type: m.Type})
+					if err != nil {
+						t.Errorf("%s: failed to get metric %s: %v", v.name, m.ID, err)
+						continue
+					}
+					if stored.Type != m.Type {
+						t.Errorf("%s: wrong metric type for %s: want %s, got %s", v.name, m.ID, m.Type, stored.Type)
+					}
+					switch m.Type {
+					case "gauge":
+						if stored.Value == nil || *stored.Value != *m.Value {
+							t.Errorf("%s: wrong gauge value for %s: want %v, got %v", v.name, m.ID, m.Value, stored.Value)
+						}
+					case "counter":
+						if stored.Delta == nil || *stored.Delta != *m.Delta {
+							t.Errorf("%s: wrong counter delta for %s: want %v, got %v", v.name, m.ID, m.Delta, stored.Delta)
+						}
+					}
+				}
+			}
+		})
+	}
+}

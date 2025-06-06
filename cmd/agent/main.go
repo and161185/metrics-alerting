@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 
 	"github.com/and161185/metrics-alerting/internal/client"
@@ -18,8 +17,8 @@ func main() {
 	storage := inmemory.NewMemStorage(ctx)
 	clnt := client.NewClient(storage, config)
 
-	b, _ := json.MarshalIndent(config, "", "  ")
-	log.Printf("Server config:\n%s", string(b))
+	log.Printf("Client config: ServerAddr=%s, ReportInterval=%d, PollInterval=%d, Timeout=%d",
+		config.ServerAddr, config.ReportInterval, config.PollInterval, config.ClientTimeout)
 
 	if err := clnt.Run(ctx); err != nil {
 		log.Fatal(err)

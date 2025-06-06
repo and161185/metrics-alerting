@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"os/signal"
 	"syscall"
@@ -19,21 +18,26 @@ func main() {
 
 	config := config.NewServerConfig()
 
-	var storage server.Storage
-	var err error
-
+	var (
+		storage server.Storage
+		err     error
+	)
 	if config.DatabaseDsn != "" {
 		storage, err = postgres.NewPostgresStorage(ctx, config.DatabaseDsn)
+		if err != nil {
+			config.Logger.Fatal(err)
+		}
 	} else {
 		storage = inmemory.NewMemStorage(ctx)
 	}
 
-	if err != nil {
-		config.Logger.Fatal(err)
-	}
-
-	b, _ := json.MarshalIndent(config, "", "  ")
-	config.Logger.Infof("Server config:\n%s", string(b))
+	config.Logger.Infof("Server config: Addr=%s, StoreInterval=%d, FileStoragePath=%q, Restore=%t, DatabaseDSN set=%t",
+		config.Addr,
+		config.StoreInterval,
+		config.FileStoragePath,
+		config.Restore,
+		config.DatabaseDsn != "",
+	)
 
 	srv := server.NewServer(storage, config)
 	if err := srv.Run(ctx); err != nil {

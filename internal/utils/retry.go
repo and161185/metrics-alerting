@@ -12,14 +12,14 @@ import (
 )
 
 func WithRetry(ctx context.Context, fn func() error) error {
-	delays := []time.Duration{1 * time.Second, 3 * time.Second, 5 * time.Second}
+	delays := []int{1, 3, 5}
 	var err error
 	for _, delay := range delays {
 		err = fn()
 		if err == nil || !isRetriable(err) {
 			return err
 		}
-		time.Sleep(delay)
+		time.Sleep(time.Duration(delay) * time.Second)
 	}
 	return err
 }
@@ -29,20 +29,20 @@ func isRetriable(err error) bool {
 		return false
 	}
 
+	retriableCodes := map[string]struct{}{
+		pgerrcode.ConnectionException:                           {},
+		pgerrcode.ConnectionDoesNotExist:                        {},
+		pgerrcode.ConnectionFailure:                             {},
+		pgerrcode.SQLClientUnableToEstablishSQLConnection:       {},
+		pgerrcode.SQLServerRejectedEstablishmentOfSQLConnection: {},
+		pgerrcode.TransactionResolutionUnknown:                  {},
+		pgerrcode.SerializationFailure:                          {},
+		pgerrcode.TooManyConnections:                            {},
+	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case pgerrcode.ConnectionException,
-			pgerrcode.ConnectionDoesNotExist,
-			pgerrcode.ConnectionFailure,
-			pgerrcode.SQLClientUnableToEstablishSQLConnection,
-			pgerrcode.SQLServerRejectedEstablishmentOfSQLConnection,
-			pgerrcode.TransactionResolutionUnknown,
-			pgerrcode.SerializationFailure,
-			pgerrcode.TooManyConnections:
+		if _, ok := retriableCodes[pgErr.Code]; ok {
 			return true
-		default:
-			return false
 		}
 	}
 

@@ -21,22 +21,30 @@ import (
 
 type Storage interface {
 	Save(ctx context.Context, metric *model.Metric) error
+	SaveBatch(ctx context.Context, metrics []model.Metric) error
 	Get(ctx context.Context, metric *model.Metric) (*model.Metric, error)
 	GetAll(ctx context.Context) (map[string]*model.Metric, error)
-	SaveToFile(ctx context.Context, filePath string) error
-	LoadFromFile(ctx context.Context, filePath string) error
 	Ping(ctx context.Context) error
 }
 
+type FileBackedStore interface {
+	SaveToFile(ctx context.Context, path string) error
+	LoadFromFile(ctx context.Context, path string) error
+}
+
 type Server struct {
-	storage Storage
-	config  *config.ServerConfig
+	storage   Storage
+	config    *config.ServerConfig
+	fileStore FileBackedStore
 }
 
 func NewServer(storage Storage, config *config.ServerConfig) *Server {
+	fileStore, _ := storage.(FileBackedStore)
+
 	return &Server{
-		storage: storage,
-		config:  config,
+		storage:   storage,
+		config:    config,
+		fileStore: fileStore,
 	}
 }
 
@@ -64,8 +72,8 @@ func (srv *Server) Run(ctx context.Context) error {
 		Handler: router,
 	}
 
-	if srv.config.Restore {
-		if err := srv.storage.LoadFromFile(ctx, srv.config.FileStoragePath); err != nil {
+	if srv.config.Restore && srv.fileStore != nil {
+		if err := srv.fileStore.LoadFromFile(ctx, srv.config.FileStoragePath); err != nil {
 			srv.config.Logger.Warnf("failed to restore metrics from file: %v", err)
 		}
 	}
@@ -76,11 +84,11 @@ func (srv *Server) Run(ctx context.Context) error {
 		}
 	}()
 
-	if srv.config.StoreInterval > 0 {
+	if srv.config.StoreInterval > 0 && srv.fileStore != nil {
 		ticker := time.NewTicker(time.Duration(srv.config.StoreInterval) * time.Second)
 		go func() {
 			for range ticker.C {
-				if err := srv.storage.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
+				if err := srv.fileStore.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
 					srv.config.Logger.Errorf("auto-save failed: %v", err)
 				}
 			}
@@ -89,8 +97,8 @@ func (srv *Server) Run(ctx context.Context) error {
 
 	<-ctx.Done()
 
-	if srv.config.FileStoragePath != "" {
-		if err := srv.storage.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
+	if srv.config.FileStoragePath != "" && srv.fileStore != nil {
+		if err := srv.fileStore.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
 			log.Printf("save failed: %v", err)
 		}
 	}
@@ -215,9 +223,9 @@ func (srv *Server) SaveToStorage(ctx context.Context, metric *model.Metric) erro
 		return err
 	}
 
-	if srv.config.StoreInterval == 0 {
-		if err := srv.storage.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
-			srv.config.Logger.Errorf("failed to-save file %s: %v", srv.config.FileStoragePath, err)
+	if srv.config.StoreInterval == 0 && srv.fileStore != nil {
+		if err := srv.fileStore.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
+			srv.config.Logger.Errorf("failed to save file %s: %v", srv.config.FileStoragePath, err)
 		}
 	}
 
@@ -225,17 +233,14 @@ func (srv *Server) SaveToStorage(ctx context.Context, metric *model.Metric) erro
 }
 
 func (srv *Server) SaveBatchToStorage(ctx context.Context, metricsArray []model.Metric) error {
-
-	for _, metric := range metricsArray {
-		err := srv.storage.Save(ctx, &metric)
-		if err != nil {
-			return err
-		}
+	err := srv.storage.SaveBatch(ctx, metricsArray)
+	if err != nil {
+		return err
 	}
 
-	if srv.config.StoreInterval == 0 {
-		if err := srv.storage.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
-			srv.config.Logger.Errorf("failed to-save file %s: %v", srv.config.FileStoragePath, err)
+	if srv.config.StoreInterval == 0 && srv.fileStore != nil {
+		if err := srv.fileStore.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
+			srv.config.Logger.Errorf("failed to save file %s: %v", srv.config.FileStoragePath, err)
 		}
 	}
 
