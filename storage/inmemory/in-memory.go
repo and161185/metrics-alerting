@@ -1,17 +1,16 @@
-package storage
+package inmemory
 
 import (
+	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"sync"
 
+	"github.com/and161185/metrics-alerting/internal/errs"
 	"github.com/and161185/metrics-alerting/model"
 )
-
-var ErrMetricNotFound = errors.New("metric not found")
 
 type MemStorage struct {
 	metrics map[string]*model.Metric
@@ -47,7 +46,7 @@ func (store *MemStorage) Get(m *model.Metric) (*model.Metric, error) {
 	val, ok := store.metrics[m.ID]
 
 	if !ok {
-		return m, ErrMetricNotFound
+		return m, errs.ErrMetricNotFound
 	}
 	return val, nil
 }
@@ -110,5 +109,9 @@ func (store *MemStorage) LoadFromFile(filePath string) error {
 
 	log.Printf("loaded from %s", filePath)
 
+	return nil
+}
+
+func (store *MemStorage) Ping(ctx context.Context) error {
 	return nil
 }

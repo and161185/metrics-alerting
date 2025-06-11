@@ -10,7 +10,7 @@ import (
 	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
-	"github.com/and161185/metrics-alerting/storage"
+	"github.com/and161185/metrics-alerting/storage/inmemory"
 )
 
 func TestSendToServer(t *testing.T) {
@@ -25,7 +25,7 @@ func TestSendToServer(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	st := storage.NewMemStorage()
+	st := inmemory.NewMemStorage()
 	m := model.Metric{ID: "TestMetric", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
 	err := st.Save(&m)
 	if err != nil {
