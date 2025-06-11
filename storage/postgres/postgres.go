@@ -2,20 +2,38 @@ package postgres
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/and161185/metrics-alerting/internal/errs"
 	"github.com/and161185/metrics-alerting/model"
-	"github.com/jackc/pgx"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PostgresStorage struct {
 	db *pgxpool.Pool
 }
+
+const initSchemaQuery = `
+	CREATE TABLE IF NOT EXISTS metrics (
+		id TEXT PRIMARY KEY,
+		mtype TEXT NOT NULL,
+		delta BIGINT,
+		value DOUBLE PRECISION
+	);`
+
+const mergeMetricsQuery = `INSERT INTO metrics (id, mtype, delta, value)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (id) DO UPDATE
+		SET mtype = EXCLUDED.mtype,
+			delta = EXCLUDED.delta,
+			value = EXCLUDED.value;`
+
+const getMetricQuery = `SELECT id, mtype, delta, value FROM metrics WHERE id = $1`
+
+const getAllMetricsQuery = `SELECT id, mtype, delta, value FROM metrics`
 
 func NewPostgresStorage(ctx context.Context, DatabaseDsn string) (*PostgresStorage, error) {
 	db, err := pgxpool.New(ctx, DatabaseDsn)
@@ -37,42 +55,36 @@ func NewPostgresStorage(ctx context.Context, DatabaseDsn string) (*PostgresStora
 }
 
 func (store *PostgresStorage) initSchema(ctx context.Context) error {
-	query := `
-	CREATE TABLE IF NOT EXISTS metrics (
-		id TEXT PRIMARY KEY,
-		mtype TEXT NOT NULL,
-		delta BIGINT,
-		value DOUBLE PRECISION
-	);`
-	_, err := store.db.Exec(ctx, query)
+	_, err := store.db.Exec(ctx, initSchemaQuery)
 	return err
+}
+
+func (store *PostgresStorage) calculateDelta(ctx context.Context, m *model.Metric, getFn func(context.Context, *model.Metric) (*model.Metric, error)) (*int64, error) {
+	if m.Type != model.Counter {
+		return m.Delta, nil
+	}
+
+	currentMetric, err := getFn(ctx, m)
+	if err != nil && err != errs.ErrMetricNotFound {
+		return m.Delta, err
+	}
+
+	if currentMetric != nil && currentMetric.Delta != nil && m.Delta != nil {
+		v := *currentMetric.Delta + *m.Delta
+		return &v, nil
+	}
+
+	return m.Delta, nil
 }
 
 func (store *PostgresStorage) Save(ctx context.Context, m *model.Metric) error {
 
-	var delta *int64
-	if m.Type == model.Counter {
-		currentMetric, err := store.Get(ctx, m)
-		if err != nil && err != errs.ErrMetricNotFound {
-			return err
-		}
-
-		if currentMetric != nil && currentMetric.Delta != nil && m.Delta != nil {
-			v := *currentMetric.Delta + *m.Delta
-			delta = &v
-		} else {
-			delta = m.Delta
-		}
-	} else {
-		delta = m.Delta
+	delta, err := store.calculateDelta(ctx, m, store.Get)
+	if err != nil {
+		return err
 	}
 
-	_, err := store.db.Exec(ctx, `INSERT INTO metrics (id, mtype, delta, value)
-		VALUES ($1, $2, $3, $4)
-		ON CONFLICT (id) DO UPDATE
-		SET mtype = EXCLUDED.mtype,
-			delta = EXCLUDED.delta,
-			value = EXCLUDED.value;`, m.ID, string(m.Type), delta, m.Value)
+	_, err = store.db.Exec(ctx, mergeMetricsQuery, m.ID, string(m.Type), delta, m.Value)
 	if err != nil {
 		return err
 	}
@@ -82,15 +94,59 @@ func (store *PostgresStorage) Save(ctx context.Context, m *model.Metric) error {
 	return nil
 }
 
+func (store *PostgresStorage) SaveBatch(ctx context.Context, metrics []model.Metric) error {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if err != nil {
+			if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
+				log.Printf("failed to rollback transaction: %v", rollbackErr)
+			}
+		}
+	}()
+
+	for _, m := range metrics {
+		delta, err := store.calculateDelta(ctx, &m, func(ctx context.Context, m *model.Metric) (*model.Metric, error) {
+			return GetWithTx(ctx, tx, m)
+		})
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.Exec(ctx, mergeMetricsQuery, m.ID, string(m.Type), delta, m.Value)
+		if err != nil {
+			return fmt.Errorf("failed to save metric %s: %w", m.ID, err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (store *PostgresStorage) Get(ctx context.Context, m *model.Metric) (*model.Metric, error) {
-	row := store.db.QueryRow(ctx, `SELECT id, mtype, delta, value FROM metrics 
-		WHERE id = $1`, m.ID)
+	return getMetric(ctx, store.db, m)
+}
+
+func GetWithTx(ctx context.Context, tx pgx.Tx, m *model.Metric) (*model.Metric, error) {
+	return getMetric(ctx, tx, m)
+}
+
+func getMetric(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}, m *model.Metric) (*model.Metric, error) {
+	row := q.QueryRow(ctx, getMetricQuery, m.ID)
 
 	var val model.Metric
 	var mtype string
 	err := row.Scan(&val.ID, &mtype, &val.Delta, &val.Value)
 	if err != nil {
-		if err.Error() == pgx.ErrNoRows.Error() {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, errs.ErrMetricNotFound
 		}
 		return nil, err
@@ -101,7 +157,7 @@ func (store *PostgresStorage) Get(ctx context.Context, m *model.Metric) (*model.
 }
 
 func (store *PostgresStorage) GetAll(ctx context.Context) (map[string]*model.Metric, error) {
-	rows, err := store.db.Query(ctx, `SELECT id, mtype, delta, value FROM metrics`)
+	rows, err := store.db.Query(ctx, getAllMetricsQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -125,56 +181,6 @@ func (store *PostgresStorage) GetAll(ctx context.Context) (map[string]*model.Met
 	}
 
 	return result, nil
-}
-
-func (store *PostgresStorage) SaveToFile(ctx context.Context, filePath string) error {
-	metrics, err := store.GetAll(ctx)
-
-	if err != nil {
-		return fmt.Errorf("failed to get metrics: %w", err)
-	}
-
-	if len(metrics) == 0 {
-		return nil
-	}
-
-	data, err := json.MarshalIndent(metrics, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal metrics: %w", err)
-	}
-
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
-	}
-
-	log.Printf("saved to %s", filePath)
-
-	return nil
-}
-
-func (store *PostgresStorage) LoadFromFile(ctx context.Context, filePath string) error {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to read file: %w", err)
-	}
-
-	var metrics map[string]*model.Metric
-	if err := json.Unmarshal(data, &metrics); err != nil {
-		return fmt.Errorf("failed to unmarshal metrics: %w", err)
-	}
-
-	for _, m := range metrics {
-		if err := store.Save(ctx, m); err != nil {
-			return fmt.Errorf("failed to restore metric %s: %w", m.ID, err)
-		}
-	}
-
-	log.Printf("loaded from %s", filePath)
-
-	return nil
 }
 
 func (store *PostgresStorage) Ping(ctx context.Context) error {

@@ -61,42 +61,6 @@ func TestMockStorage_GetAll(t *testing.T) {
 	}
 }
 
-func TestMockStorage_SaveToFile(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStorage := mocks.NewMockStorage(ctrl)
-
-	filePath := "/tmp/test.json"
-
-	mockStorage.EXPECT().
-		SaveToFile(gomock.Any(), filePath).
-		Return(nil)
-
-	err := mockStorage.SaveToFile(context.Background(), filePath)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestMockStorage_LoadFromFile(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockStorage := mocks.NewMockStorage(ctrl)
-
-	filePath := "/tmp/test.json"
-
-	mockStorage.EXPECT().
-		LoadFromFile(gomock.Any(), filePath).
-		Return(nil)
-
-	err := mockStorage.LoadFromFile(context.Background(), filePath)
-	if err != nil {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
 func TestMockStorage_Ping(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()

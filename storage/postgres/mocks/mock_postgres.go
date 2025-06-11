@@ -65,20 +65,6 @@ func (mr *MockStorageMockRecorder) GetAll(ctx interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAll", reflect.TypeOf((*MockStorage)(nil).GetAll), ctx)
 }
 
-// LoadFromFile mocks base method.
-func (m *MockStorage) LoadFromFile(ctx context.Context, filePath string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LoadFromFile", ctx, filePath)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// LoadFromFile indicates an expected call of LoadFromFile.
-func (mr *MockStorageMockRecorder) LoadFromFile(ctx, filePath interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadFromFile", reflect.TypeOf((*MockStorage)(nil).LoadFromFile), ctx, filePath)
-}
-
 // Ping mocks base method.
 func (m *MockStorage) Ping(ctx context.Context) error {
 	m.ctrl.T.Helper()
@@ -108,29 +94,66 @@ func (mr *MockStorageMockRecorder) Save(ctx, metric interface{}) *gomock.Call {
 }
 
 // SaveBatch mocks base method.
-func (m *MockStorage) SaveBatch(ctx context.Context, metricsArray []model.Metric) error {
+func (m *MockStorage) SaveBatch(ctx context.Context, metrics []model.Metric) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveBatch", ctx, metricsArray)
+	ret := m.ctrl.Call(m, "SaveBatch", ctx, metrics)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SaveBatch indicates an expected call of SaveBatch.
-func (mr *MockStorageMockRecorder) SaveBatch(ctx, metricsArray interface{}) *gomock.Call {
+func (mr *MockStorageMockRecorder) SaveBatch(ctx, metrics interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveBatch", reflect.TypeOf((*MockStorage)(nil).SaveBatch), ctx, metricsArray)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveBatch", reflect.TypeOf((*MockStorage)(nil).SaveBatch), ctx, metrics)
+}
+
+// MockFileBackedStore is a mock of FileBackedStore interface.
+type MockFileBackedStore struct {
+	ctrl     *gomock.Controller
+	recorder *MockFileBackedStoreMockRecorder
+}
+
+// MockFileBackedStoreMockRecorder is the mock recorder for MockFileBackedStore.
+type MockFileBackedStoreMockRecorder struct {
+	mock *MockFileBackedStore
+}
+
+// NewMockFileBackedStore creates a new mock instance.
+func NewMockFileBackedStore(ctrl *gomock.Controller) *MockFileBackedStore {
+	mock := &MockFileBackedStore{ctrl: ctrl}
+	mock.recorder = &MockFileBackedStoreMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockFileBackedStore) EXPECT() *MockFileBackedStoreMockRecorder {
+	return m.recorder
+}
+
+// LoadFromFile mocks base method.
+func (m *MockFileBackedStore) LoadFromFile(ctx context.Context, path string) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LoadFromFile", ctx, path)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// LoadFromFile indicates an expected call of LoadFromFile.
+func (mr *MockFileBackedStoreMockRecorder) LoadFromFile(ctx, path interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoadFromFile", reflect.TypeOf((*MockFileBackedStore)(nil).LoadFromFile), ctx, path)
 }
 
 // SaveToFile mocks base method.
-func (m *MockStorage) SaveToFile(ctx context.Context, filePath string) error {
+func (m *MockFileBackedStore) SaveToFile(ctx context.Context, path string) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SaveToFile", ctx, filePath)
+	ret := m.ctrl.Call(m, "SaveToFile", ctx, path)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // SaveToFile indicates an expected call of SaveToFile.
-func (mr *MockStorageMockRecorder) SaveToFile(ctx, filePath interface{}) *gomock.Call {
+func (mr *MockFileBackedStoreMockRecorder) SaveToFile(ctx, path interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveToFile", reflect.TypeOf((*MockStorage)(nil).SaveToFile), ctx, filePath)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SaveToFile", reflect.TypeOf((*MockFileBackedStore)(nil).SaveToFile), ctx, path)
 }

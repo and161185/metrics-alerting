@@ -13,6 +13,7 @@ import (
 
 	"github.com/and161185/metrics-alerting/cmd/agent/collector"
 	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 )
 
@@ -111,15 +112,29 @@ func (clnt *Client) SendToServer(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 
-	resp, err := httpClient.Do(req)
+	var statusCode int
+	err = utils.WithRetry(ctx, func() error {
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		_, err = io.Copy(io.Discard, resp.Body)
+		if err != nil {
+			return err
+		}
+
+		statusCode = resp.StatusCode
+		return nil
+	})
+
 	if err != nil {
 		return fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	if statusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", statusCode)
 	}
 
 	return nil
