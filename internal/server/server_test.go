@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -19,8 +20,10 @@ import (
 )
 
 func NewTestServer() Server {
+	ctx := context.Background()
+
 	server := Server{
-		storage: inmemory.NewMemStorage(),
+		storage: inmemory.NewMemStorage(ctx),
 		config: &config.ServerConfig{
 			StoreInterval:   1,            // чтобы не было синхронного SaveToFile()
 			FileStoragePath: "./dev-null", // безопасно
@@ -137,10 +140,11 @@ func TestUpdateMetricHandlerJSON(t *testing.T) {
 }
 
 func TestGetMetricHandler(t *testing.T) {
-	st := inmemory.NewMemStorage()
+	ctx := context.Background()
+	st := inmemory.NewMemStorage(ctx)
 
 	m := model.Metric{ID: "test", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
-	err := st.Save(&m)
+	err := st.Save(ctx, &m)
 	if err != nil {
 		t.Fatalf("Save in storage metric %s %f failed: %v", m.ID, *m.Value, err)
 	}
@@ -173,10 +177,11 @@ func TestGetMetricHandler(t *testing.T) {
 }
 
 func TestGetMetricHandlerJSON(t *testing.T) {
-	st := inmemory.NewMemStorage()
+	ctx := context.Background()
+	st := inmemory.NewMemStorage(ctx)
 
 	m := model.Metric{ID: "test", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
-	err := st.Save(&m)
+	err := st.Save(ctx, &m)
 	if err != nil {
 		t.Fatalf("Save in storage metric %s %f failed: %v", m.ID, *m.Value, err)
 	}
@@ -215,16 +220,18 @@ func TestGetMetricHandlerJSON(t *testing.T) {
 }
 
 func TestListMetricsHandler(t *testing.T) {
-	st := inmemory.NewMemStorage()
+	ctx := context.Background()
+
+	st := inmemory.NewMemStorage(ctx)
 
 	m1 := model.Metric{ID: "foo", Type: model.Gauge, Value: utils.F64Ptr(1.23)}
-	err := st.Save(&m1)
+	err := st.Save(ctx, &m1)
 	if err != nil {
 		t.Fatalf("Save in storage metric %s %f failed: %v", m1.ID, *m1.Value, err)
 	}
 
 	m2 := model.Metric{ID: "bar", Type: model.Counter, Delta: utils.I64Ptr(10)}
-	err = st.Save(&m2)
+	err = st.Save(ctx, &m2)
 	if err != nil {
 		t.Fatalf("Save in storage metric %s %f failed: %v", m2.ID, *m2.Value, err)
 	}

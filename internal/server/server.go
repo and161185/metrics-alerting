@@ -7,9 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/and161185/metrics-alerting/cmd/server/metrics"
@@ -22,11 +19,11 @@ import (
 )
 
 type Storage interface {
-	Save(metric *model.Metric) error
-	Get(metric *model.Metric) (*model.Metric, error)
-	GetAll() (map[string]*model.Metric, error)
-	SaveToFile(filePath string) error
-	LoadFromFile(filePath string) error
+	Save(ctx context.Context, metric *model.Metric) error
+	Get(ctx context.Context, metric *model.Metric) (*model.Metric, error)
+	GetAll(ctx context.Context) (map[string]*model.Metric, error)
+	SaveToFile(ctx context.Context, filePath string) error
+	LoadFromFile(ctx context.Context, filePath string) error
 	Ping(ctx context.Context) error
 }
 
@@ -57,7 +54,7 @@ func (srv *Server) buildRouter() http.Handler {
 	return router
 }
 
-func (srv *Server) Run() error {
+func (srv *Server) Run(ctx context.Context) error {
 	router := srv.buildRouter()
 
 	server := &http.Server{
@@ -66,13 +63,10 @@ func (srv *Server) Run() error {
 	}
 
 	if srv.config.Restore {
-		if err := srv.storage.LoadFromFile(srv.config.FileStoragePath); err != nil {
+		if err := srv.storage.LoadFromFile(ctx, srv.config.FileStoragePath); err != nil {
 			srv.config.Logger.Warnf("failed to restore metrics from file: %v", err)
 		}
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -84,7 +78,7 @@ func (srv *Server) Run() error {
 		ticker := time.NewTicker(time.Duration(srv.config.StoreInterval) * time.Second)
 		go func() {
 			for range ticker.C {
-				if err := srv.storage.SaveToFile(srv.config.FileStoragePath); err != nil {
+				if err := srv.storage.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
 					srv.config.Logger.Errorf("auto-save failed: %v", err)
 				}
 			}
@@ -93,8 +87,10 @@ func (srv *Server) Run() error {
 
 	<-ctx.Done()
 
-	if err := srv.storage.SaveToFile(srv.config.FileStoragePath); err != nil {
-		log.Printf("save failed: %v", err)
+	if srv.config.FileStoragePath != "" {
+		if err := srv.storage.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
+			log.Printf("save failed: %v", err)
+		}
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -103,6 +99,8 @@ func (srv *Server) Run() error {
 }
 
 func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	typ := chi.URLParam(r, "type")
 	name := chi.URLParam(r, "name")
 	val := chi.URLParam(r, "value")
@@ -114,7 +112,7 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = srv.SaveToStorage(metric)
+	err = srv.SaveToStorage(ctx, metric)
 	if err != nil {
 		log.Printf("failed to save metric [name=%s]: %v", metric.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -125,6 +123,7 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 
 	if r.Header.Get("Content-Type") != "application/json" {
 		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
@@ -144,7 +143,7 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = srv.SaveToStorage(&metric)
+	err = srv.SaveToStorage(ctx, &metric)
 	if err != nil {
 		log.Printf("failed to save metric [name=%s]: %v", metric.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -158,14 +157,15 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 	}
 }
 
-func (srv *Server) SaveToStorage(metric *model.Metric) error {
-	err := srv.storage.Save(metric)
+func (srv *Server) SaveToStorage(ctx context.Context, metric *model.Metric) error {
+
+	err := srv.storage.Save(ctx, metric)
 	if err != nil {
 		return err
 	}
 
 	if srv.config.StoreInterval == 0 {
-		if err := srv.storage.SaveToFile(srv.config.FileStoragePath); err != nil {
+		if err := srv.storage.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
 			srv.config.Logger.Errorf("failed to-save file %s: %v", srv.config.FileStoragePath, err)
 		}
 	}
@@ -174,6 +174,8 @@ func (srv *Server) SaveToStorage(metric *model.Metric) error {
 }
 
 func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	typ := chi.URLParam(r, "type")
 	name := chi.URLParam(r, "name")
 
@@ -184,7 +186,7 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storedMetric, err := srv.storage.Get(metric)
+	storedMetric, err := srv.storage.Get(ctx, metric)
 	if err != nil {
 		if errors.Is(err, errs.ErrMetricNotFound) {
 			log.Printf("metric not found [type=%s, name=%s]: %v", typ, name, err)
@@ -222,6 +224,8 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
 	if r.Header.Get("Content-Type") != "application/json" {
 		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
 		return
@@ -233,7 +237,7 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	stored, err := srv.storage.Get(&reqMetric)
+	stored, err := srv.storage.Get(ctx, &reqMetric)
 	if err != nil {
 		if errors.Is(err, errs.ErrMetricNotFound) {
 			http.NotFound(w, r)
@@ -250,8 +254,9 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 }
 
 func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 
-	all, err := srv.storage.GetAll()
+	all, err := srv.storage.GetAll(ctx)
 	if err != nil {
 		log.Printf("failed to get all metrics from storage: %v", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -278,7 +283,9 @@ func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (srv *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx := r.Context()
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	err := srv.storage.Ping(ctx)

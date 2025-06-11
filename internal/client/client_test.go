@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,8 @@ import (
 )
 
 func TestSendToServer(t *testing.T) {
+	ctx := context.Background()
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/update/") {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -25,9 +28,9 @@ func TestSendToServer(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	st := inmemory.NewMemStorage()
+	st := inmemory.NewMemStorage(ctx)
 	m := model.Metric{ID: "TestMetric", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
-	err := st.Save(&m)
+	err := st.Save(ctx, &m)
 	if err != nil {
 		t.Fatalf("Save in storage metric %s failed: %v", m.ID, err)
 	}
@@ -38,7 +41,7 @@ func TestSendToServer(t *testing.T) {
 		httpClient: &http.Client{Timeout: 2 * time.Second},
 	}
 
-	err = client.SendToServer()
+	err = client.SendToServer(ctx)
 	if err != nil {
 		t.Errorf("SendToServer failed: %v", err)
 	}

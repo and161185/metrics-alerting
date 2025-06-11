@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"github.com/and161185/metrics-alerting/internal/client"
@@ -10,11 +11,13 @@ import (
 
 func main() {
 
+	ctx := context.Background()
+
 	config := config.NewClientConfig()
-	storage := inmemory.NewMemStorage()
+	storage := inmemory.NewMemStorage(ctx)
 	clnt := client.NewClient(storage, config)
 
-	if err := clnt.Run(); err != nil {
+	if err := clnt.Run(ctx); err != nil {
 		log.Fatal(err)
 	}
 }
