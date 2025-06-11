@@ -7,14 +7,14 @@ import (
 	"log"
 	"os"
 
+	"github.com/and161185/metrics-alerting/internal/errs"
 	"github.com/and161185/metrics-alerting/model"
-	"github.com/and161185/metrics-alerting/storage/inmemory"
+	"github.com/jackc/pgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PostgresStorage struct {
 	db *pgxpool.Pool
-	ms *inmemory.MemStorage
 }
 
 func NewPostgresStorage(ctx context.Context, DatabaseDsn string) (*PostgresStorage, error) {
@@ -23,7 +23,7 @@ func NewPostgresStorage(ctx context.Context, DatabaseDsn string) (*PostgresStora
 		return nil, err
 	}
 
-	storage := &PostgresStorage{db: db, ms: inmemory.NewMemStorage(ctx)}
+	storage := &PostgresStorage{db: db}
 
 	if err := storage.Ping(ctx); err != nil {
 		return nil, err
@@ -49,14 +49,37 @@ func (store *PostgresStorage) initSchema(ctx context.Context) error {
 }
 
 func (store *PostgresStorage) Save(ctx context.Context, m *model.Metric) error {
+
+	var delta *int64
+	if m.Type == model.Counter {
+		currentMetric, err := store.Get(ctx, m)
+		if err != nil && err != errs.ErrMetricNotFound {
+			return err
+		}
+
+		if currentMetric != nil && currentMetric.Delta != nil && m.Delta != nil {
+			v := *currentMetric.Delta + *m.Delta
+			delta = &v
+		} else {
+			delta = m.Delta
+		}
+	} else {
+		delta = m.Delta
+	}
+
 	_, err := store.db.Exec(ctx, `INSERT INTO metrics (id, mtype, delta, value)
 		VALUES ($1, $2, $3, $4)
 		ON CONFLICT (id) DO UPDATE
 		SET mtype = EXCLUDED.mtype,
 			delta = EXCLUDED.delta,
-			value = EXCLUDED.value;`, m.ID, string(m.Type), m.Delta, m.Value)
+			value = EXCLUDED.value;`, m.ID, string(m.Type), delta, m.Value)
+	if err != nil {
+		return err
+	}
 
-	return err
+	m.Delta = delta
+
+	return nil
 }
 
 func (store *PostgresStorage) Get(ctx context.Context, m *model.Metric) (*model.Metric, error) {
@@ -67,9 +90,11 @@ func (store *PostgresStorage) Get(ctx context.Context, m *model.Metric) (*model.
 	var mtype string
 	err := row.Scan(&val.ID, &mtype, &val.Delta, &val.Value)
 	if err != nil {
+		if err.Error() == pgx.ErrNoRows.Error() {
+			return nil, errs.ErrMetricNotFound
+		}
 		return nil, err
 	}
-
 	val.Type = model.MetricType(mtype)
 
 	return &val, nil

@@ -47,6 +47,7 @@ func (srv *Server) buildRouter() http.Handler {
 	router.Use(middleware.CompressMiddleware)
 	router.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
 	router.Post("/update", srv.UpdateMetricHandlerJSON)
+	router.Post("/updates", srv.UpdateArrayMetricHandlerJSON)
 	router.Get("/value/{type}/{name}", srv.GetMetricHandler)
 	router.Post("/value", srv.GetMetricHandlerJSON)
 	router.Get("/", srv.ListMetricsHandler)
@@ -157,11 +158,69 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+func (srv *Server) UpdateArrayMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var metricsArray []model.Metric
+
+	err := json.NewDecoder(r.Body).Decode(&metricsArray)
+	if err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if len(metricsArray) == 0 {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	for _, metric := range metricsArray {
+		err = metrics.CheckMetric(&metric)
+		if err != nil {
+			msg := fmt.Sprintf("invalid JSON: %v", err)
+			http.Error(w, msg, http.StatusUnprocessableEntity)
+			return
+		}
+	}
+
+	err = srv.SaveBatchToStorage(ctx, metricsArray)
+	if err != nil {
+		log.Printf("failed to save metrics: %v", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func (srv *Server) SaveToStorage(ctx context.Context, metric *model.Metric) error {
 
 	err := srv.storage.Save(ctx, metric)
 	if err != nil {
 		return err
+	}
+
+	if srv.config.StoreInterval == 0 {
+		if err := srv.storage.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
+			srv.config.Logger.Errorf("failed to-save file %s: %v", srv.config.FileStoragePath, err)
+		}
+	}
+
+	return nil
+}
+
+func (srv *Server) SaveBatchToStorage(ctx context.Context, metricsArray []model.Metric) error {
+
+	for _, metric := range metricsArray {
+		err := srv.storage.Save(ctx, &metric)
+		if err != nil {
+			return err
+		}
 	}
 
 	if srv.config.StoreInterval == 0 {

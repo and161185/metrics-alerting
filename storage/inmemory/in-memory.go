@@ -23,9 +23,10 @@ func NewMemStorage(ctx context.Context) *MemStorage {
 	}
 }
 
-// TODO: sync access if used concurrently
-
 func (store *MemStorage) Save(ctx context.Context, m *model.Metric) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
 	existing, ok := store.metrics[m.ID]
 	if !ok {
 		store.metrics[m.ID] = m
@@ -33,7 +34,9 @@ func (store *MemStorage) Save(ctx context.Context, m *model.Metric) error {
 		store.metrics[m.ID] = m
 	} else if m.Type == model.Counter && m.Delta != nil {
 		if existing.Delta != nil {
-			*existing.Delta += *m.Delta
+			newVal := *existing.Delta + *m.Delta
+			m.Delta = &newVal
+			*existing.Delta = newVal
 		} else {
 			v := *m.Delta
 			existing.Delta = &v
