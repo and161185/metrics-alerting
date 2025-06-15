@@ -57,3 +57,45 @@ func TestSendToServer(t *testing.T) {
 		t.Errorf("SendToServer failed: %v", err)
 	}
 }
+
+func TestSendMetricToServer(t *testing.T) {
+	ctx := context.Background()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/update/" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("unexpected method: %s, want POST", r.Method)
+		}
+		if r.Header.Get("Content-Encoding") != "gzip" {
+			t.Errorf("missing gzip encoding")
+		}
+
+		gr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			t.Errorf("gzip decode error: %v", err)
+			return
+		}
+		defer gr.Close()
+		body, _ := io.ReadAll(gr)
+		t.Logf("received: %s", string(body))
+
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	st := inmemory.NewMemStorage(ctx)
+	m := &model.Metric{ID: "TestMetric", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
+
+	client := &Client{
+		storage:    st,
+		config:     &config.ClientConfig{ServerAddr: ts.URL},
+		httpClient: &http.Client{Timeout: 2 * time.Second},
+	}
+
+	err := client.SendMetricToServer(ctx, m)
+	if err != nil {
+		t.Errorf("SendMetricToServer failed: %v", err)
+	}
+}
