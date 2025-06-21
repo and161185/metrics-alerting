@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,7 @@ type ClientConfig struct {
 	PollInterval   int
 	ClientTimeout  int
 	Key            string
+	RateLimit      int
 }
 
 type ServerConfig struct {
@@ -95,6 +97,7 @@ func NewClientConfig() *ClientConfig {
 	flag.IntVar(&cfg.PollInterval, "p", 2, "poll interval")
 	flag.IntVar(&cfg.ClientTimeout, "t", 10, "client timeout")
 	flag.StringVar(&cfg.Key, "k", "", "Hash key string")
+	flag.IntVar(&cfg.RateLimit, "l", runtime.NumCPU(), "rate limit")
 	flag.Parse()
 
 	ReadClientEnvironment(cfg)

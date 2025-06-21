@@ -1,11 +1,14 @@
 package collector
 
 import (
+	"fmt"
 	"math/rand/v2"
 	"runtime"
 
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/mem"
 )
 
 var pollCount int64
@@ -54,4 +57,35 @@ func CollectRuntimeMetrics() []model.Metric {
 
 func ResetPollCount() {
 	pollCount = 0
+}
+
+func CollectGopsutilMetrics() []model.Metric {
+	var res []model.Metric
+
+	vmem, err := mem.VirtualMemory()
+	if err == nil {
+		res = append(res, model.Metric{
+			ID:    "TotalMemory",
+			Type:  model.Gauge,
+			Value: utils.F64Ptr(float64(vmem.Total)),
+		})
+		res = append(res, model.Metric{
+			ID:    "FreeMemory",
+			Type:  model.Gauge,
+			Value: utils.F64Ptr(float64(vmem.Free)),
+		})
+	}
+
+	cpuPercents, err := cpu.Percent(0, true)
+	if err == nil {
+		for i, p := range cpuPercents {
+			res = append(res, model.Metric{
+				ID:    fmt.Sprintf("CPUutilization%d", i+1),
+				Type:  model.Gauge,
+				Value: utils.F64Ptr(p),
+			})
+		}
+	}
+
+	return res
 }

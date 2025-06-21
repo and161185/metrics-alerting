@@ -14,7 +14,7 @@ import (
 
 type MemStorage struct {
 	metrics map[string]*model.Metric
-	mu      sync.Mutex
+	mu      sync.RWMutex
 }
 
 func NewMemStorage(ctx context.Context) *MemStorage {
@@ -57,6 +57,9 @@ func (store *MemStorage) SaveBatch(ctx context.Context, metrics []model.Metric) 
 }
 
 func (store *MemStorage) Get(ctx context.Context, m *model.Metric) (*model.Metric, error) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+
 	val, ok := store.metrics[m.ID]
 
 	if !ok {
@@ -66,6 +69,9 @@ func (store *MemStorage) Get(ctx context.Context, m *model.Metric) (*model.Metri
 }
 
 func (store *MemStorage) GetAll(ctx context.Context) (map[string]*model.Metric, error) {
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+
 	result := make(map[string]*model.Metric, len(store.metrics))
 	for k, v := range store.metrics {
 		result[k] = v
@@ -74,8 +80,6 @@ func (store *MemStorage) GetAll(ctx context.Context) (map[string]*model.Metric, 
 }
 
 func (store *MemStorage) SaveToFile(ctx context.Context, filePath string) error {
-	store.mu.Lock()
-	defer store.mu.Unlock()
 
 	metrics, err := store.GetAll(ctx)
 
