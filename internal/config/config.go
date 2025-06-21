@@ -15,6 +15,7 @@ type ClientConfig struct {
 	ReportInterval int
 	PollInterval   int
 	ClientTimeout  int
+	Key            string
 }
 
 type ServerConfig struct {
@@ -24,6 +25,7 @@ type ServerConfig struct {
 	FileStoragePath string
 	Restore         bool
 	DatabaseDsn     string
+	Key             string
 }
 
 func NewServerConfig() *ServerConfig {
@@ -37,7 +39,8 @@ func NewServerConfig() *ServerConfig {
 	flag.IntVar(&cfg.StoreInterval, "i", 300, "store interval")
 	flag.StringVar(&cfg.FileStoragePath, "f", "./tmp/metrics-db.json", "path to metrics file")
 	flag.BoolVar(&cfg.Restore, "r", true, "load metrics from last file")
-	flag.StringVar(&cfg.DatabaseDsn, "d", "", "DB connection sting")
+	flag.StringVar(&cfg.DatabaseDsn, "d", "", "DB connection string")
+	flag.StringVar(&cfg.Key, "k", "", "Hash key string")
 	flag.Parse()
 
 	cfg.Logger = logger.Sugar()
@@ -79,6 +82,10 @@ func ReadServerEnvironment(cfg *ServerConfig) {
 			log.Printf("invalid RESTORE env var: %v", err)
 		}
 	}
+
+	if key := os.Getenv("KEY"); key != "" {
+		cfg.Key = key
+	}
 }
 
 func NewClientConfig() *ClientConfig {
@@ -87,6 +94,7 @@ func NewClientConfig() *ClientConfig {
 	flag.IntVar(&cfg.ReportInterval, "r", 10, "report interval")
 	flag.IntVar(&cfg.PollInterval, "p", 2, "poll interval")
 	flag.IntVar(&cfg.ClientTimeout, "t", 10, "client timeout")
+	flag.StringVar(&cfg.Key, "k", "", "Hash key string")
 	flag.Parse()
 
 	ReadClientEnvironment(cfg)
@@ -121,5 +129,9 @@ func ReadClientEnvironment(cfg *ClientConfig) {
 		} else {
 			log.Printf("invalid POLL_INTERVAL env var: %v", err)
 		}
+	}
+
+	if key := os.Getenv("KEY"); key != "" {
+		cfg.Key = key
 	}
 }

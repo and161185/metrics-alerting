@@ -52,6 +52,7 @@ func (srv *Server) buildRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.StripSlashes)
 	router.Use(middleware.LogMiddleware(srv.config.Logger))
+	router.Use(middleware.VerifyHashMiddleware(srv.config))
 	router.Use(middleware.DecompressMiddleware)
 	router.Use(middleware.CompressMiddleware)
 	router.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)

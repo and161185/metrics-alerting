@@ -112,6 +112,10 @@ func (clnt *Client) SendToServer(ctx context.Context) error {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 
+	if clnt.config.Key != "" {
+		req.Header.Set("HashSHA256", utils.CalculateHash(body.Bytes(), clnt.config.Key))
+	}
+
 	var statusCode int
 	err = utils.WithRetry(ctx, func() error {
 		resp, err := httpClient.Do(req)
