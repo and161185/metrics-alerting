@@ -9,6 +9,7 @@ import (
 
 	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/internal/utils"
+	"github.com/stretchr/testify/require"
 )
 
 func gzipBody(data []byte) []byte {
@@ -19,66 +20,44 @@ func gzipBody(data []byte) []byte {
 	return buf.Bytes()
 }
 
-func TestVerifyHashMiddleware(t *testing.T) {
-	key := "supersecret"
+func makeRequest(t *testing.T, body []byte, key, hash string) *httptest.ResponseRecorder {
 	cfg := &config.ServerConfig{Key: key}
 
 	handler := VerifyHashMiddleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("response"))
+		_, _ = w.Write([]byte("response"))
 	}))
 
-	t.Run("valid hash", func(t *testing.T) {
-		raw := []byte(`{"id":"Alloc","type":"gauge","value":123}`)
-		compressed := gzipBody(raw)
-		hash := utils.CalculateHash(compressed, key)
-
-		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(compressed))
-		req.Header.Set("Content-Encoding", "gzip")
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Content-Type", "application/json")
+	if hash != "" {
 		req.Header.Set("HashSHA256", hash)
-		req.Header.Set("Content-Type", "application/json")
+	}
 
-		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+	return rr
+}
 
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected 200, got %d", rr.Code)
-		}
+func TestVerifyHashMiddleware(t *testing.T) {
+	raw := []byte(`{"id":"Alloc","type":"gauge","value":123}`)
+	compressed := gzipBody(raw)
+	key := "supersecret"
 
-		if rr.Header().Get("HashSHA256") == "" {
-			t.Errorf("expected HashSHA256 in response")
-		}
+	t.Run("valid hash", func(t *testing.T) {
+		hash := utils.CalculateHash(compressed, key)
+		rr := makeRequest(t, compressed, key, hash)
+		require.Equal(t, http.StatusOK, rr.Code)
+		require.NotEmpty(t, rr.Header().Get("HashSHA256"))
 	})
 
 	t.Run("invalid hash", func(t *testing.T) {
-		raw := []byte(`{"id":"Alloc","type":"gauge","value":123}`)
-		compressed := gzipBody(raw)
-
-		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(compressed))
-		req.Header.Set("Content-Encoding", "gzip")
-		req.Header.Set("HashSHA256", "invalidhash")
-		req.Header.Set("Content-Type", "application/json")
-
-		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusBadRequest {
-			t.Errorf("expected 400, got %d", rr.Code)
-		}
+		rr := makeRequest(t, compressed, key, "invalidhash")
+		require.Equal(t, http.StatusBadRequest, rr.Code)
 	})
 
 	t.Run("no hash header", func(t *testing.T) {
-		raw := []byte(`{"id":"Alloc","type":"gauge","value":123}`)
-		compressed := gzipBody(raw)
-
-		req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(compressed))
-		req.Header.Set("Content-Encoding", "gzip")
-		req.Header.Set("Content-Type", "application/json")
-
-		rr := httptest.NewRecorder()
-		handler.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected 200 without hash, got %d", rr.Code)
-		}
+		rr := makeRequest(t, compressed, key, "")
+		require.Equal(t, http.StatusOK, rr.Code)
 	})
 }

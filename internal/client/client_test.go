@@ -13,6 +13,7 @@ import (
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 	"github.com/and161185/metrics-alerting/storage/inmemory"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSendToServer(t *testing.T) {
@@ -23,17 +24,13 @@ func TestSendToServer(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Method != http.MethodPost {
-			t.Errorf("unexpected method: %s, want POST", r.Method)
+			t.Errorf("unexpected method: %s", r.Method)
 		}
 		if r.Header.Get("Content-Encoding") == "gzip" {
 			gr, err := gzip.NewReader(r.Body)
-			if err != nil {
-				t.Errorf("gzip decode error: %v", err)
-				return
-			}
+			require.NoError(t, err)
 			defer gr.Close()
-			body, _ := io.ReadAll(gr)
-			t.Logf("received: %s", string(body))
+			_, _ = io.ReadAll(gr)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -41,10 +38,7 @@ func TestSendToServer(t *testing.T) {
 
 	st := inmemory.NewMemStorage(ctx)
 	m := model.Metric{ID: "TestMetric", Type: model.Gauge, Value: utils.F64Ptr(42.0)}
-	err := st.Save(ctx, &m)
-	if err != nil {
-		t.Fatalf("Save in storage metric %s failed: %v", m.ID, err)
-	}
+	require.NoError(t, st.Save(ctx, &m))
 
 	client := &Client{
 		storage:    st,
@@ -52,10 +46,7 @@ func TestSendToServer(t *testing.T) {
 		httpClient: &http.Client{Timeout: 2 * time.Second},
 	}
 
-	err = client.SendToServer(ctx)
-	if err != nil {
-		t.Errorf("SendToServer failed: %v", err)
-	}
+	require.NoError(t, client.SendToServer(ctx))
 }
 
 func TestSendMetricToServer(t *testing.T) {
@@ -66,20 +57,15 @@ func TestSendMetricToServer(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		if r.Method != http.MethodPost {
-			t.Errorf("unexpected method: %s, want POST", r.Method)
+			t.Errorf("unexpected method: %s", r.Method)
 		}
 		if r.Header.Get("Content-Encoding") != "gzip" {
 			t.Errorf("missing gzip encoding")
 		}
-
 		gr, err := gzip.NewReader(r.Body)
-		if err != nil {
-			t.Errorf("gzip decode error: %v", err)
-			return
-		}
+		require.NoError(t, err)
 		defer gr.Close()
-		body, _ := io.ReadAll(gr)
-		t.Logf("received: %s", string(body))
+		_, _ = io.ReadAll(gr)
 
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -94,8 +80,5 @@ func TestSendMetricToServer(t *testing.T) {
 		httpClient: &http.Client{Timeout: 2 * time.Second},
 	}
 
-	err := client.SendMetricToServer(ctx, m)
-	if err != nil {
-		t.Errorf("SendMetricToServer failed: %v", err)
-	}
+	require.NoError(t, client.SendMetricToServer(ctx, m))
 }
