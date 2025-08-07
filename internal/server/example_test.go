@@ -18,7 +18,11 @@ func ExampleServer_UpdateMetricHandler() {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	fmt.Println(w.Result().StatusCode)
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	fmt.Println(resp.StatusCode)
+	// Output: 200
 }
 
 func ExampleServer_GetMetricHandler() {
