@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// LogMiddleware logs HTTP requests using the provided logger.
 func LogMiddleware(logger *zap.SugaredLogger) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

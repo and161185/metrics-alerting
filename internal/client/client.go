@@ -17,18 +17,20 @@ import (
 	"github.com/and161185/metrics-alerting/model"
 )
 
-type Storage interface {
+type storage interface {
 	Save(ctx context.Context, metric *model.Metric) error
 	GetAll(ctx context.Context) (map[string]*model.Metric, error)
 }
 
+// Client implements an agent that sends metrics to the server.
 type Client struct {
-	storage    Storage
+	storage    storage
 	config     *config.ClientConfig
 	httpClient *http.Client
 }
 
-func NewClient(storage Storage, config *config.ClientConfig) *Client {
+// NewClient creates a new client instance with the given storage and configuration.
+func NewClient(storage storage, config *config.ClientConfig) *Client {
 
 	return &Client{
 		storage:    storage,
@@ -37,6 +39,7 @@ func NewClient(storage Storage, config *config.ClientConfig) *Client {
 	}
 }
 
+// Run starts collecting metrics and sending them to the server in the background.
 func (clnt *Client) Run(ctx context.Context) error {
 
 	store := clnt.storage
@@ -44,13 +47,13 @@ func (clnt *Client) Run(ctx context.Context) error {
 	reportInterval := clnt.config.ReportInterval
 	rateLimit := clnt.config.RateLimit
 
-	go RuntimeCollector(ctx, store, time.Duration(pollInterval))
+	go runtimeCollector(ctx, store, time.Duration(pollInterval))
 
-	go GopsutilCollector(ctx, store, time.Duration(pollInterval))
+	go gopsutilCollector(ctx, store, time.Duration(pollInterval))
 
 	metricsChan := make(chan *model.Metric, rateLimit)
 
-	go DispatchMetrics(ctx, store, metricsChan, time.Duration(reportInterval))
+	go dispatchMetrics(ctx, store, metricsChan, time.Duration(reportInterval))
 
 	for i := 0; i < rateLimit; i++ {
 		go func() {
@@ -59,7 +62,7 @@ func (clnt *Client) Run(ctx context.Context) error {
 				case <-ctx.Done():
 					return
 				case m := <-metricsChan:
-					if err := clnt.SendMetricToServer(ctx, m); err != nil {
+					if err := clnt.sendMetricToServer(ctx, m); err != nil {
 						log.Printf("failed to send metric: %v", err)
 						continue
 					}
@@ -72,7 +75,7 @@ func (clnt *Client) Run(ctx context.Context) error {
 	return nil
 }
 
-func RuntimeCollector(ctx context.Context, store Storage, interval time.Duration) {
+func runtimeCollector(ctx context.Context, store storage, interval time.Duration) {
 
 	collectAndSave(ctx, store, collector.CollectRuntimeMetrics, "runtime")
 
@@ -89,7 +92,7 @@ func RuntimeCollector(ctx context.Context, store Storage, interval time.Duration
 	}
 }
 
-func GopsutilCollector(ctx context.Context, store Storage, interval time.Duration) {
+func gopsutilCollector(ctx context.Context, store storage, interval time.Duration) {
 
 	collectAndSave(ctx, store, collector.CollectGopsutilMetrics, "gopsutil")
 
@@ -106,7 +109,7 @@ func GopsutilCollector(ctx context.Context, store Storage, interval time.Duratio
 	}
 }
 
-func collectAndSave(ctx context.Context, store Storage, collect func() []model.Metric, label string) {
+func collectAndSave(ctx context.Context, store storage, collect func() []model.Metric, label string) {
 	for _, m := range collect() {
 		if err := store.Save(ctx, &m); err != nil {
 			log.Printf("failed to save metric [%s][%s]: %v", label, m.ID, err)
@@ -114,7 +117,7 @@ func collectAndSave(ctx context.Context, store Storage, collect func() []model.M
 	}
 }
 
-func DispatchMetrics(ctx context.Context, store Storage, ch chan<- *model.Metric, interval time.Duration) {
+func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
@@ -139,7 +142,7 @@ func DispatchMetrics(ctx context.Context, store Storage, ch chan<- *model.Metric
 	}
 }
 
-func (clnt *Client) SendMetricToServer(ctx context.Context, m *model.Metric) error {
+func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) error {
 	serverAddr := clnt.config.ServerAddr
 	httpClient := clnt.httpClient
 
@@ -197,7 +200,7 @@ func (clnt *Client) SendMetricToServer(ctx context.Context, m *model.Metric) err
 	return nil
 }
 
-func (clnt *Client) SendToServer(ctx context.Context) error {
+func (clnt *Client) sendToServer(ctx context.Context) error {
 	store := clnt.storage
 	serverAddr := clnt.config.ServerAddr
 	httpClient := clnt.httpClient

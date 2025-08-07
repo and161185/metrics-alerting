@@ -42,7 +42,7 @@ func TestReadServerEnvironment(t *testing.T) {
 
 	setEnvAndRun(t, env, func() {
 		cfg := &ServerConfig{}
-		ReadServerEnvironment(cfg)
+		readServerEnvironment(cfg)
 
 		require.Equal(t, "127.0.0.1:9999", cfg.Addr)
 		require.Equal(t, 5, cfg.StoreInterval)
@@ -60,7 +60,7 @@ func TestReadClientEnvironment(t *testing.T) {
 
 	setEnvAndRun(t, env, func() {
 		cfg := &ClientConfig{}
-		ReadClientEnvironment(cfg)
+		readClientEnvironment(cfg)
 
 		require.Equal(t, "127.0.0.1:9999", cfg.ServerAddr)
 		require.Equal(t, 5, cfg.ReportInterval)

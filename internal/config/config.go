@@ -11,25 +11,28 @@ import (
 	"go.uber.org/zap"
 )
 
+// ClientConfig holds the configuration settings for the agent.
 type ClientConfig struct {
-	ServerAddr     string
-	ReportInterval int
-	PollInterval   int
-	ClientTimeout  int
-	Key            string
-	RateLimit      int
+	ServerAddr     string // Server address
+	ReportInterval int    // Interval for sending metrics (in seconds)
+	PollInterval   int    // Interval for collecting metrics (in seconds)
+	ClientTimeout  int    // HTTP client timeout (in seconds)
+	Key            string // Key for hash generation
+	RateLimit      int    // Limit on simultaneous outgoing requests
 }
 
+// ServerConfig holds the configuration settings for the server.
 type ServerConfig struct {
-	Addr            string
+	Addr            string // Server address
 	Logger          *zap.SugaredLogger
-	StoreInterval   int
-	FileStoragePath string
-	Restore         bool
-	DatabaseDsn     string
-	Key             string
+	StoreInterval   int    // Interval for storing metrics to file (in seconds)
+	FileStoragePath string // Path to the file for metric storage
+	Restore         bool   // Whether to restore metrics from file on startup
+	DatabaseDsn     string // Data Source Name for PostgreSQL
+	Key             string // Key for hash verification
 }
 
+// NewServerConfig creates and returns a new ServerConfig by parsing flags and environment variables.
 func NewServerConfig() *ServerConfig {
 	logCfg := zap.NewProductionConfig()
 	logCfg.OutputPaths = []string{"stdout", "server.log"}
@@ -47,12 +50,12 @@ func NewServerConfig() *ServerConfig {
 
 	cfg.Logger = logger.Sugar()
 
-	ReadServerEnvironment(cfg)
+	readServerEnvironment(cfg)
 
 	return cfg
 }
 
-func ReadServerEnvironment(cfg *ServerConfig) {
+func readServerEnvironment(cfg *ServerConfig) {
 	if addr := os.Getenv("ADDRESS"); addr != "" {
 		cfg.Addr = addr
 	}
@@ -90,6 +93,7 @@ func ReadServerEnvironment(cfg *ServerConfig) {
 	}
 }
 
+// NewClientConfig creates and returns a new ClientConfig by parsing flags and environment variables.
 func NewClientConfig() *ClientConfig {
 	cfg := &ClientConfig{}
 	flag.StringVar(&cfg.ServerAddr, "a", "http://localhost:8080", "HTTP server address (must include http(s)://)")
@@ -100,7 +104,7 @@ func NewClientConfig() *ClientConfig {
 	flag.IntVar(&cfg.RateLimit, "l", runtime.NumCPU(), "rate limit")
 	flag.Parse()
 
-	ReadClientEnvironment(cfg)
+	readClientEnvironment(cfg)
 
 	if !strings.HasPrefix(cfg.ServerAddr, "http://") && !strings.HasPrefix(cfg.ServerAddr, "https://") {
 		cfg.ServerAddr = "http://" + cfg.ServerAddr
@@ -109,7 +113,7 @@ func NewClientConfig() *ClientConfig {
 	return cfg
 }
 
-func ReadClientEnvironment(cfg *ClientConfig) {
+func readClientEnvironment(cfg *ClientConfig) {
 	if addr := os.Getenv("ADDRESS"); addr != "" {
 		cfg.ServerAddr = addr
 	}

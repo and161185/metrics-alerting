@@ -46,7 +46,7 @@ func TestSendToServer(t *testing.T) {
 		httpClient: &http.Client{Timeout: 2 * time.Second},
 	}
 
-	require.NoError(t, client.SendToServer(ctx))
+	require.NoError(t, client.sendToServer(ctx))
 }
 
 func TestSendMetricToServer(t *testing.T) {
@@ -80,5 +80,5 @@ func TestSendMetricToServer(t *testing.T) {
 		httpClient: &http.Client{Timeout: 2 * time.Second},
 	}
 
-	require.NoError(t, client.SendMetricToServer(ctx, m))
+	require.NoError(t, client.sendMetricToServer(ctx, m))
 }

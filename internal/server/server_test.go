@@ -1,4 +1,3 @@
-// server_test.go — переписанные тесты
 package server
 
 import (

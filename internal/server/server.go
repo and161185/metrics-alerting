@@ -19,27 +19,35 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// Storage defines the interface for a metrics storage.
 type Storage interface {
+	// Save stores a single metric.
 	Save(ctx context.Context, metric *model.Metric) error
+	// SaveBatch stores a batch of metrics.
 	SaveBatch(ctx context.Context, metrics []model.Metric) error
+	// Get retrieves a metric by ID and type.
 	Get(ctx context.Context, metric *model.Metric) (*model.Metric, error)
+	// GetAll returns all stored metrics.
 	GetAll(ctx context.Context) (map[string]*model.Metric, error)
+	// Ping checks the availability of the storage.
 	Ping(ctx context.Context) error
 }
 
-type FileBackedStore interface {
+type fileBackedStore interface {
 	SaveToFile(ctx context.Context, path string) error
 	LoadFromFile(ctx context.Context, path string) error
 }
 
+// Server represents an HTTP server for handling metrics.
 type Server struct {
 	storage   Storage
 	config    *config.ServerConfig
-	fileStore FileBackedStore
+	fileStore fileBackedStore
 }
 
+// NewServer creates a new server instance with the given storage and configuration.
 func NewServer(storage Storage, config *config.ServerConfig) *Server {
-	fileStore, _ := storage.(FileBackedStore)
+	fileStore, _ := storage.(fileBackedStore)
 
 	return &Server{
 		storage:   storage,
@@ -65,6 +73,7 @@ func (srv *Server) buildRouter() http.Handler {
 	return router
 }
 
+// Run starts the HTTP server and, if configured, periodically saves metrics to a file.
 func (srv *Server) Run(ctx context.Context) error {
 	router := srv.buildRouter()
 
@@ -109,6 +118,7 @@ func (srv *Server) Run(ctx context.Context) error {
 	return server.Shutdown(shutdownCtx)
 }
 
+// UpdateMetricHandler handles updating a metric via URL parameters.
 func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -124,7 +134,7 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = utils.WithRetry(ctx, func() error {
-		return srv.SaveToStorage(ctx, metric)
+		return srv.saveToStorage(ctx, metric)
 	})
 
 	if err != nil {
@@ -136,6 +146,7 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// UpdateMetricHandlerJSON handles updating a single metric via a JSON payload.
 func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -158,7 +169,7 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 	}
 
 	err = utils.WithRetry(ctx, func() error {
-		return srv.SaveToStorage(ctx, &metric)
+		return srv.saveToStorage(ctx, &metric)
 	})
 
 	if err != nil {
@@ -174,6 +185,7 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// UpdateArrayMetricHandlerJSON handles updating multiple metrics via a JSON array.
 func (srv *Server) UpdateArrayMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -205,7 +217,7 @@ func (srv *Server) UpdateArrayMetricHandlerJSON(w http.ResponseWriter, r *http.R
 	}
 
 	err = utils.WithRetry(ctx, func() error {
-		return srv.SaveBatchToStorage(ctx, metricsArray)
+		return srv.saveBatchToStorage(ctx, metricsArray)
 	})
 
 	if err != nil {
@@ -217,7 +229,7 @@ func (srv *Server) UpdateArrayMetricHandlerJSON(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusOK)
 }
 
-func (srv *Server) SaveToStorage(ctx context.Context, metric *model.Metric) error {
+func (srv *Server) saveToStorage(ctx context.Context, metric *model.Metric) error {
 
 	err := srv.storage.Save(ctx, metric)
 	if err != nil {
@@ -233,7 +245,7 @@ func (srv *Server) SaveToStorage(ctx context.Context, metric *model.Metric) erro
 	return nil
 }
 
-func (srv *Server) SaveBatchToStorage(ctx context.Context, metricsArray []model.Metric) error {
+func (srv *Server) saveBatchToStorage(ctx context.Context, metricsArray []model.Metric) error {
 	err := srv.storage.SaveBatch(ctx, metricsArray)
 	if err != nil {
 		return err
@@ -248,6 +260,7 @@ func (srv *Server) SaveBatchToStorage(ctx context.Context, metricsArray []model.
 	return nil
 }
 
+// GetMetricHandler returns the value of a metric as a plain string (gauge/counter).
 func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -304,6 +317,7 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetMetricHandlerJSON returns the value of a metric in JSON format.
 func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -340,6 +354,7 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// ListMetricsHandler returns a list of all stored metrics in HTML format.
 func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -375,6 +390,7 @@ func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// PingHandler checks the availability of the database.
 func (srv *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

@@ -14,7 +14,7 @@ func BenchmarkReadServerEnvironment(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cfg := &ServerConfig{}
-		ReadServerEnvironment(cfg)
+		readServerEnvironment(cfg)
 	}
 }
 
@@ -26,6 +26,6 @@ func BenchmarkReadClientEnvironment(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		cfg := &ClientConfig{}
-		ReadClientEnvironment(cfg)
+		readClientEnvironment(cfg)
 	}
 }

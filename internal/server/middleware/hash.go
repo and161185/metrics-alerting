@@ -9,6 +9,7 @@ import (
 	"github.com/and161185/metrics-alerting/internal/utils"
 )
 
+// VerifyHashMiddleware validates the HashSHA256 header for request integrity.
 func VerifyHashMiddleware(cfg *config.ServerConfig) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -33,7 +33,7 @@ func BenchmarkSendToServer(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = client.SendToServer(ctx)
+		_ = client.sendToServer(ctx)
 	}
 }
 
@@ -44,6 +44,6 @@ func BenchmarkSendMetricToServer(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = client.SendMetricToServer(ctx, metric)
+		_ = client.sendMetricToServer(ctx, metric)
 	}
 }
