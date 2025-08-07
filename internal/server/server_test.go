@@ -87,11 +87,12 @@ func TestUpdateMetricHandlerJSON(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 
+			r.ServeHTTP(w, req)
+
 			resp := w.Result()
 			defer resp.Body.Close()
 
-			r.ServeHTTP(w, req)
-			require.Equal(t, tc.wantStatus, w.Result().StatusCode)
+			require.Equal(t, tc.wantStatus, resp.StatusCode)
 		})
 	}
 }
