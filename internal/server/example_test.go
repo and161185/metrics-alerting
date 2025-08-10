@@ -1,15 +1,20 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/storage/inmemory"
 	"github.com/go-chi/chi/v5"
 )
 
 func ExampleServer_UpdateMetricHandler() {
-	srv := newTestServer()
+	ctx := context.Background()
+	st := inmemory.NewMemStorage(ctx)
+	srv := Server{Storage: st, Config: config.NewServerConfig()}
 
 	r := chi.NewRouter()
 	r.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
@@ -26,7 +31,9 @@ func ExampleServer_UpdateMetricHandler() {
 }
 
 func ExampleServer_GetMetricHandler() {
-	srv := newTestServer()
+	ctx := context.Background()
+	st := inmemory.NewMemStorage(ctx)
+	srv := Server{Storage: st}
 
 	updateReq := httptest.NewRequest(http.MethodPost, "/update/gauge/Alloc/123.45", nil)
 	updateW := httptest.NewRecorder()
@@ -41,7 +48,9 @@ func ExampleServer_GetMetricHandler() {
 }
 
 func ExampleServer_ListMetricsHandler() {
-	srv := newTestServer()
+	ctx := context.Background()
+	st := inmemory.NewMemStorage(ctx)
+	srv := Server{Storage: st}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 
@@ -51,7 +60,9 @@ func ExampleServer_ListMetricsHandler() {
 }
 
 func ExampleServer_PingHandler() {
-	srv := newTestServer()
+	ctx := context.Background()
+	st := inmemory.NewMemStorage(ctx)
+	srv := Server{Storage: st}
 	req := httptest.NewRequest(http.MethodGet, "/ping", nil)
 	w := httptest.NewRecorder()
 

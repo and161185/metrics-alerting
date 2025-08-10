@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"bytes"
@@ -8,13 +8,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/and161185/metrics-alerting/internal/server/testutils"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 	"github.com/go-chi/chi/v5"
 )
 
 func BenchmarkUpdateMetricHandler(b *testing.B) {
-	srv := newTestServer()
+	ctx := context.Background()
+	srv := testutils.NewTestServer(ctx)
 	r := chi.NewRouter()
 	r.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
 
@@ -28,7 +30,8 @@ func BenchmarkUpdateMetricHandler(b *testing.B) {
 }
 
 func BenchmarkUpdateMetricHandlerJSON(b *testing.B) {
-	srv := newTestServer()
+	ctx := context.Background()
+	srv := testutils.NewTestServer(ctx)
 	r := chi.NewRouter()
 	r.Post("/update/", srv.UpdateMetricHandlerJSON)
 
@@ -46,8 +49,8 @@ func BenchmarkUpdateMetricHandlerJSON(b *testing.B) {
 
 func BenchmarkGetMetricHandler(b *testing.B) {
 	ctx := context.Background()
-	srv := newTestServer()
-	_ = srv.storage.Save(ctx, &model.Metric{ID: "cpu", Type: "gauge", Value: utils.F64Ptr(42.0)})
+	srv := testutils.NewTestServer(ctx)
+	_ = srv.Storage.Save(ctx, &model.Metric{ID: "cpu", Type: "gauge", Value: utils.F64Ptr(42.0)})
 
 	r := chi.NewRouter()
 	r.Get("/value/{type}/{name}", srv.GetMetricHandler)
@@ -63,9 +66,9 @@ func BenchmarkGetMetricHandler(b *testing.B) {
 
 func BenchmarkListMetricsHandler(b *testing.B) {
 	ctx := context.Background()
-	srv := newTestServer()
-	_ = srv.storage.Save(ctx, &model.Metric{ID: "foo", Type: "gauge", Value: utils.F64Ptr(1.23)})
-	_ = srv.storage.Save(ctx, &model.Metric{ID: "bar", Type: "counter", Delta: utils.I64Ptr(10)})
+	srv := testutils.NewTestServer(ctx)
+	_ = srv.Storage.Save(ctx, &model.Metric{ID: "foo", Type: "gauge", Value: utils.F64Ptr(1.23)})
+	_ = srv.Storage.Save(ctx, &model.Metric{ID: "bar", Type: "counter", Delta: utils.I64Ptr(10)})
 
 	r := chi.NewRouter()
 	r.Get("/", srv.ListMetricsHandler)

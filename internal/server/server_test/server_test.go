@@ -1,4 +1,4 @@
-package server
+package server_test
 
 import (
 	"bytes"
@@ -10,26 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/server/testutils"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
-	"github.com/and161185/metrics-alerting/storage/inmemory"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
-
-func newTestServer() Server {
-	ctx := context.Background()
-	return Server{
-		storage: inmemory.NewMemStorage(ctx),
-		config: &config.ServerConfig{
-			StoreInterval:   1,
-			FileStoragePath: "./dev-null",
-			Logger:          zap.NewNop().Sugar(),
-		},
-	}
-}
 
 func TestUpdateMetricHandler(t *testing.T) {
 	tests := []struct {
@@ -47,7 +33,8 @@ func TestUpdateMetricHandler(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
-	srv := newTestServer()
+	ctx := context.Background()
+	srv := testutils.NewTestServer(ctx)
 	r.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
 
 	for _, tc := range tests {
@@ -77,7 +64,9 @@ func TestUpdateMetricHandlerJSON(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
-	srv := newTestServer()
+
+	ctx := context.Background()
+	srv := testutils.NewTestServer(ctx)
 	r.Post("/update/", srv.UpdateMetricHandlerJSON)
 
 	for _, tc := range tests {
@@ -99,9 +88,9 @@ func TestUpdateMetricHandlerJSON(t *testing.T) {
 
 func TestGetMetricHandler(t *testing.T) {
 	ctx := context.Background()
-	st := inmemory.NewMemStorage(ctx)
-	_ = st.Save(ctx, &model.Metric{ID: "test", Type: model.Gauge, Value: utils.F64Ptr(42.0)})
-	srv := Server{storage: st}
+	srv := testutils.NewTestServer(ctx)
+	_ = srv.Storage.Save(ctx, &model.Metric{ID: "test", Type: model.Gauge, Value: utils.F64Ptr(42.0)})
+
 	r := chi.NewRouter()
 	r.Get("/value/{type}/{name}", srv.GetMetricHandler)
 
@@ -118,9 +107,9 @@ func TestGetMetricHandler(t *testing.T) {
 
 func TestGetMetricHandlerJSON(t *testing.T) {
 	ctx := context.Background()
-	st := inmemory.NewMemStorage(ctx)
-	_ = st.Save(ctx, &model.Metric{ID: "test", Type: model.Gauge, Value: utils.F64Ptr(42.0)})
-	srv := Server{storage: st}
+	srv := testutils.NewTestServer(ctx)
+	_ = srv.Storage.Save(ctx, &model.Metric{ID: "test", Type: model.Gauge, Value: utils.F64Ptr(42.0)})
+
 	r := chi.NewRouter()
 	r.Post("/value/", srv.GetMetricHandlerJSON)
 
@@ -142,10 +131,9 @@ func TestGetMetricHandlerJSON(t *testing.T) {
 
 func TestListMetricsHandler(t *testing.T) {
 	ctx := context.Background()
-	st := inmemory.NewMemStorage(ctx)
-	_ = st.Save(ctx, &model.Metric{ID: "foo", Type: model.Gauge, Value: utils.F64Ptr(1.23)})
-	_ = st.Save(ctx, &model.Metric{ID: "bar", Type: model.Counter, Delta: utils.I64Ptr(10)})
-	srv := Server{storage: st}
+	srv := testutils.NewTestServer(ctx)
+	_ = srv.Storage.Save(ctx, &model.Metric{ID: "foo", Type: model.Gauge, Value: utils.F64Ptr(1.23)})
+	_ = srv.Storage.Save(ctx, &model.Metric{ID: "bar", Type: model.Counter, Delta: utils.I64Ptr(10)})
 	r := chi.NewRouter()
 	r.Get("/", srv.ListMetricsHandler)
 
@@ -182,7 +170,7 @@ func TestUpdateArrayMetricHandlerJSON(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
-	srv := newTestServer()
+	srv := testutils.NewTestServer(ctx)
 	r.Post("/updates/", srv.UpdateArrayMetricHandlerJSON)
 
 	for _, tc := range tests {
@@ -206,7 +194,7 @@ func TestUpdateArrayMetricHandlerJSON(t *testing.T) {
 			require.Equal(t, tc.wantStatus, resp.StatusCode)
 			if tc.wantStatus == http.StatusOK {
 				for _, m := range tc.metrics {
-					stored, err := srv.storage.Get(ctx, &model.Metric{ID: m.ID, Type: m.Type})
+					stored, err := srv.Storage.Get(ctx, &model.Metric{ID: m.ID, Type: m.Type})
 					require.NoError(t, err)
 					switch m.Type {
 					case "gauge":
