@@ -1,3 +1,4 @@
+// Package model contains core data types for the project.
 package model
 
 // MetricType defines the type of a metric: gauge or counter.
