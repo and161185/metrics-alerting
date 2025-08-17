@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// DecompressMiddleware decompresses gzip-compressed request bodies.
 func DecompressMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Content-Encoding") != "gzip" {
@@ -35,6 +36,7 @@ func DecompressMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// CompressMiddleware applies gzip compression to the response.
 func CompressMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {

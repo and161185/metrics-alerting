@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// WithRetry runs the given function with retry logic.
+// Retries up to 3 times with delays: 1s, 3s, and 5s.
 func WithRetry(ctx context.Context, fn func() error) error {
 	delays := []int{1, 3, 5}
 	var err error

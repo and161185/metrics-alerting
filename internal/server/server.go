@@ -19,40 +19,48 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// Storage defines the interface for a metrics storage.
 type Storage interface {
+	// Save stores a single metric.
 	Save(ctx context.Context, metric *model.Metric) error
+	// SaveBatch stores a batch of metrics.
 	SaveBatch(ctx context.Context, metrics []model.Metric) error
+	// Get retrieves a metric by ID and type.
 	Get(ctx context.Context, metric *model.Metric) (*model.Metric, error)
+	// GetAll returns all stored metrics.
 	GetAll(ctx context.Context) (map[string]*model.Metric, error)
+	// Ping checks the availability of the storage.
 	Ping(ctx context.Context) error
 }
 
-type FileBackedStore interface {
+type fileBackedStore interface {
 	SaveToFile(ctx context.Context, path string) error
 	LoadFromFile(ctx context.Context, path string) error
 }
 
+// Server represents an HTTP server for handling metrics.
 type Server struct {
-	storage   Storage
-	config    *config.ServerConfig
-	fileStore FileBackedStore
+	Storage   Storage
+	Config    *config.ServerConfig
+	FileStore fileBackedStore
 }
 
+// NewServer creates a new server instance with the given storage and configuration.
 func NewServer(storage Storage, config *config.ServerConfig) *Server {
-	fileStore, _ := storage.(FileBackedStore)
+	fileStore, _ := storage.(fileBackedStore)
 
 	return &Server{
-		storage:   storage,
-		config:    config,
-		fileStore: fileStore,
+		Storage:   storage,
+		Config:    config,
+		FileStore: fileStore,
 	}
 }
 
 func (srv *Server) buildRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.StripSlashes)
-	router.Use(middleware.LogMiddleware(srv.config.Logger))
-	router.Use(middleware.VerifyHashMiddleware(srv.config))
+	router.Use(middleware.LogMiddleware(srv.Config.Logger))
+	router.Use(middleware.VerifyHashMiddleware(srv.Config))
 	router.Use(middleware.DecompressMiddleware)
 	router.Use(middleware.CompressMiddleware)
 	router.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
@@ -65,32 +73,33 @@ func (srv *Server) buildRouter() http.Handler {
 	return router
 }
 
+// Run starts the HTTP server and, if configured, periodically saves metrics to a file.
 func (srv *Server) Run(ctx context.Context) error {
 	router := srv.buildRouter()
 
 	server := &http.Server{
-		Addr:    srv.config.Addr,
+		Addr:    srv.Config.Addr,
 		Handler: router,
 	}
 
-	if srv.config.Restore && srv.fileStore != nil {
-		if err := srv.fileStore.LoadFromFile(ctx, srv.config.FileStoragePath); err != nil {
-			srv.config.Logger.Warnf("failed to restore metrics from file: %v", err)
+	if srv.Config.Restore && srv.FileStore != nil {
+		if err := srv.FileStore.LoadFromFile(ctx, srv.Config.FileStoragePath); err != nil {
+			srv.Config.Logger.Warnf("failed to restore metrics from file: %v", err)
 		}
 	}
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			srv.config.Logger.Fatalf("server error: %v", err)
+			srv.Config.Logger.Fatalf("server error: %v", err)
 		}
 	}()
 
-	if srv.config.StoreInterval > 0 && srv.fileStore != nil {
-		ticker := time.NewTicker(time.Duration(srv.config.StoreInterval) * time.Second)
+	if srv.Config.StoreInterval > 0 && srv.FileStore != nil {
+		ticker := time.NewTicker(time.Duration(srv.Config.StoreInterval) * time.Second)
 		go func() {
 			for range ticker.C {
-				if err := srv.fileStore.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
-					srv.config.Logger.Errorf("auto-save failed: %v", err)
+				if err := srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath); err != nil {
+					srv.Config.Logger.Errorf("auto-save failed: %v", err)
 				}
 			}
 		}()
@@ -98,8 +107,8 @@ func (srv *Server) Run(ctx context.Context) error {
 
 	<-ctx.Done()
 
-	if srv.config.FileStoragePath != "" && srv.fileStore != nil {
-		if err := srv.fileStore.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
+	if srv.Config.FileStoragePath != "" && srv.FileStore != nil {
+		if err := srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath); err != nil {
 			log.Printf("save failed: %v", err)
 		}
 	}
@@ -109,6 +118,7 @@ func (srv *Server) Run(ctx context.Context) error {
 	return server.Shutdown(shutdownCtx)
 }
 
+// UpdateMetricHandler handles updating a metric via URL parameters.
 func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -124,7 +134,7 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = utils.WithRetry(ctx, func() error {
-		return srv.SaveToStorage(ctx, metric)
+		return srv.saveToStorage(ctx, metric)
 	})
 
 	if err != nil {
@@ -136,6 +146,7 @@ func (srv *Server) UpdateMetricHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// UpdateMetricHandlerJSON handles updating a single metric via a JSON payload.
 func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -158,7 +169,7 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 	}
 
 	err = utils.WithRetry(ctx, func() error {
-		return srv.SaveToStorage(ctx, &metric)
+		return srv.saveToStorage(ctx, &metric)
 	})
 
 	if err != nil {
@@ -174,6 +185,7 @@ func (srv *Server) UpdateMetricHandlerJSON(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// UpdateArrayMetricHandlerJSON handles updating multiple metrics via a JSON array.
 func (srv *Server) UpdateArrayMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -205,7 +217,7 @@ func (srv *Server) UpdateArrayMetricHandlerJSON(w http.ResponseWriter, r *http.R
 	}
 
 	err = utils.WithRetry(ctx, func() error {
-		return srv.SaveBatchToStorage(ctx, metricsArray)
+		return srv.saveBatchToStorage(ctx, metricsArray)
 	})
 
 	if err != nil {
@@ -217,37 +229,38 @@ func (srv *Server) UpdateArrayMetricHandlerJSON(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusOK)
 }
 
-func (srv *Server) SaveToStorage(ctx context.Context, metric *model.Metric) error {
+func (srv *Server) saveToStorage(ctx context.Context, metric *model.Metric) error {
 
-	err := srv.storage.Save(ctx, metric)
+	err := srv.Storage.Save(ctx, metric)
 	if err != nil {
 		return err
 	}
 
-	if srv.config.StoreInterval == 0 && srv.fileStore != nil {
-		if err := srv.fileStore.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
-			srv.config.Logger.Errorf("failed to save file %s: %v", srv.config.FileStoragePath, err)
+	if srv.Config.StoreInterval == 0 && srv.FileStore != nil {
+		if err := srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath); err != nil {
+			srv.Config.Logger.Errorf("failed to save file %s: %v", srv.Config.FileStoragePath, err)
 		}
 	}
 
 	return nil
 }
 
-func (srv *Server) SaveBatchToStorage(ctx context.Context, metricsArray []model.Metric) error {
-	err := srv.storage.SaveBatch(ctx, metricsArray)
+func (srv *Server) saveBatchToStorage(ctx context.Context, metricsArray []model.Metric) error {
+	err := srv.Storage.SaveBatch(ctx, metricsArray)
 	if err != nil {
 		return err
 	}
 
-	if srv.config.StoreInterval == 0 && srv.fileStore != nil {
-		if err := srv.fileStore.SaveToFile(ctx, srv.config.FileStoragePath); err != nil {
-			srv.config.Logger.Errorf("failed to save file %s: %v", srv.config.FileStoragePath, err)
+	if srv.Config.StoreInterval == 0 && srv.FileStore != nil {
+		if err := srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath); err != nil {
+			srv.Config.Logger.Errorf("failed to save file %s: %v", srv.Config.FileStoragePath, err)
 		}
 	}
 
 	return nil
 }
 
+// GetMetricHandler returns the value of a metric as a plain string (gauge/counter).
 func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -264,7 +277,7 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 	var storedMetric *model.Metric
 	err = utils.WithRetry(ctx, func() error {
 		var err error
-		storedMetric, err = srv.storage.Get(ctx, metric)
+		storedMetric, err = srv.Storage.Get(ctx, metric)
 		return err
 	})
 
@@ -304,6 +317,7 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// GetMetricHandlerJSON returns the value of a metric in JSON format.
 func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -321,7 +335,7 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 	var storedMetric *model.Metric
 	err := utils.WithRetry(ctx, func() error {
 		var err error
-		storedMetric, err = srv.storage.Get(ctx, &reqMetric)
+		storedMetric, err = srv.Storage.Get(ctx, &reqMetric)
 		return err
 	})
 
@@ -340,13 +354,14 @@ func (srv *Server) GetMetricHandlerJSON(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// ListMetricsHandler returns a list of all stored metrics in HTML format.
 func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	var all map[string]*model.Metric
 	err := utils.WithRetry(ctx, func() error {
 		var err error
-		all, err = srv.storage.GetAll(ctx)
+		all, err = srv.Storage.GetAll(ctx)
 		return err
 	})
 
@@ -375,6 +390,7 @@ func (srv *Server) ListMetricsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// PingHandler checks the availability of the database.
 func (srv *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -382,7 +398,7 @@ func (srv *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	err := utils.WithRetry(ctx, func() error {
-		return srv.storage.Ping(ctx)
+		return srv.Storage.Ping(ctx)
 	})
 
 	if err != nil {

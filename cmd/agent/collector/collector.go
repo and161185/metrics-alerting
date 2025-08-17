@@ -13,6 +13,7 @@ import (
 
 var pollCount int64
 
+// CollectRuntimeMetrics reads runtime memory statistics and returns them as a slice of metrics.
 func CollectRuntimeMetrics() []model.Metric {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -55,10 +56,12 @@ func CollectRuntimeMetrics() []model.Metric {
 	return res
 }
 
+// ResetPollCount resets the internal poll counter used in runtime metrics.
 func ResetPollCount() {
 	pollCount = 0
 }
 
+// CollectGopsutilMetrics gathers system memory and CPU metrics using gopsutil.
 func CollectGopsutilMetrics() []model.Metric {
 	var res []model.Metric
 

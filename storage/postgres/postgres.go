@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// PostgresStorage implements Storage interface using PostgreSQL.
 type PostgresStorage struct {
 	db *pgxpool.Pool
 }
@@ -35,6 +36,7 @@ const getMetricQuery = `SELECT id, mtype, delta, value FROM metrics WHERE id = $
 
 const getAllMetricsQuery = `SELECT id, mtype, delta, value FROM metrics`
 
+// NewPostgresStorage creates a new PostgresStorage with the given database connection.
 func NewPostgresStorage(ctx context.Context, DatabaseDsn string) (*PostgresStorage, error) {
 	db, err := pgxpool.New(ctx, DatabaseDsn)
 	if err != nil {
@@ -77,6 +79,7 @@ func (store *PostgresStorage) calculateDelta(ctx context.Context, m *model.Metri
 	return m.Delta, nil
 }
 
+// Save inserts or updates a single metric in the database.
 func (store *PostgresStorage) Save(ctx context.Context, m *model.Metric) error {
 
 	delta, err := store.calculateDelta(ctx, m, store.Get)
@@ -94,6 +97,7 @@ func (store *PostgresStorage) Save(ctx context.Context, m *model.Metric) error {
 	return nil
 }
 
+// SaveBatch inserts or updates multiple metrics in a transaction.
 func (store *PostgresStorage) SaveBatch(ctx context.Context, metrics []model.Metric) error {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
@@ -129,10 +133,12 @@ func (store *PostgresStorage) SaveBatch(ctx context.Context, metrics []model.Met
 	return nil
 }
 
+// Get retrieves a single metric by ID and type from the database.
 func (store *PostgresStorage) Get(ctx context.Context, m *model.Metric) (*model.Metric, error) {
 	return getMetric(ctx, store.db, m)
 }
 
+// GetWithTx retrieves a metric using the provided transaction context.
 func GetWithTx(ctx context.Context, tx pgx.Tx, m *model.Metric) (*model.Metric, error) {
 	return getMetric(ctx, tx, m)
 }
@@ -156,6 +162,7 @@ func getMetric(ctx context.Context, q interface {
 	return &val, nil
 }
 
+// GetAll returns all metrics stored in the database.
 func (store *PostgresStorage) GetAll(ctx context.Context) (map[string]*model.Metric, error) {
 	rows, err := store.db.Query(ctx, getAllMetricsQuery)
 	if err != nil {
@@ -183,6 +190,7 @@ func (store *PostgresStorage) GetAll(ctx context.Context) (map[string]*model.Met
 	return result, nil
 }
 
+// Ping checks if the database is reachable.
 func (store *PostgresStorage) Ping(ctx context.Context) error {
 	return store.db.Ping(ctx)
 }

@@ -13,6 +13,7 @@ var ErrInvalidValue = errors.New("invalid value")
 var ErrInvalidType = errors.New("invalid metric type")
 var ErrInvalidName = errors.New("invalid metric name")
 
+// NewEmptyMetric creates a new empty Metric with the specified type and ID.
 func NewEmptyMetric(typ, name string) (*model.Metric, error) {
 
 	metricsType := model.MetricType(typ)
@@ -23,6 +24,7 @@ func NewEmptyMetric(typ, name string) (*model.Metric, error) {
 	return &model.Metric{ID: name, Type: metricsType}, nil
 }
 
+// NewMetric creates a new Metric based on the given type, ID, and value string.
 func NewMetric(typ, name, val string) (*model.Metric, error) {
 
 	metric, err := NewEmptyMetric(typ, name)
@@ -45,6 +47,7 @@ func NewMetric(typ, name, val string) (*model.Metric, error) {
 	return metric, nil
 }
 
+// CheckMetric validates the structure and values of a Metric.
 func CheckMetric(m *model.Metric) error {
 	if m.Type == model.Counter && m.Delta == nil {
 		return errors.New("delta required for counter")

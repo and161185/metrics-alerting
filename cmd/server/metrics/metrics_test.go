@@ -1,3 +1,4 @@
+// metrics_test.go — исправленные тесты
 package metrics
 
 import (
@@ -21,13 +22,18 @@ func TestNewEmptyMetric(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewEmptyMetric(tt.typ, tt.id)
+			m, err := NewEmptyMetric(tt.typ, tt.id)
 
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)
-			} else {
-				require.NoError(t, err)
+				require.Equal(t, "", m.ID)
+				require.Equal(t, model.MetricType(""), m.Type)
+				return
 			}
+
+			require.NoError(t, err)
+			require.Equal(t, tt.id, m.ID)
+			require.Equal(t, model.MetricType(tt.typ), m.Type)
 		})
 	}
 }
@@ -56,22 +62,21 @@ func TestNewMetric(t *testing.T) {
 			if tc.wantErr != nil {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tc.wantErr.Error())
+				require.Equal(t, "", m.ID)
+				require.Equal(t, model.MetricType(""), m.Type)
 				return
 			}
 
 			require.NoError(t, err)
-			if tc.id != m.ID {
-				t.Errorf("metric mismatch: need %s get %s", tc.id, m.ID)
-			}
-			require.NoError(t, err)
-			if tc.id != m.ID {
-				t.Errorf("metric type mismatch: need %s get %s", tc.wantType, m.Type)
-			}
-			require.NoError(t, err)
-			if tc.id != m.ID {
-				t.Errorf("metric value error: need %f get %f", tc.wantVal, *m.Value)
+			require.Equal(t, tc.id, m.ID)
+			require.Equal(t, tc.wantType, m.Type)
+			if tc.wantType == model.Gauge {
+				require.NotNil(t, m.Value)
+				require.InEpsilon(t, tc.wantVal, *m.Value, 0.0001)
+			} else if tc.wantType == model.Counter {
+				require.NotNil(t, m.Delta)
+				require.EqualValues(t, tc.wantVal, *m.Delta)
 			}
 		})
 	}
-
 }

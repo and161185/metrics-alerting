@@ -3,52 +3,67 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
+func setEnvAndRun(t *testing.T, env map[string]string, fn func()) {
+	t.Helper()
+
+	// сохранить старые переменные
+	backup := map[string]string{}
+	for k := range env {
+		backup[k] = os.Getenv(k)
+	}
+
+	// установить новые
+	for k, v := range env {
+		require.NoError(t, os.Setenv(k, v))
+	}
+	defer func() {
+		for k := range env {
+			_ = os.Unsetenv(k)
+			if old, ok := backup[k]; ok {
+				_ = os.Setenv(k, old)
+			}
+		}
+	}()
+
+	fn()
+}
+
 func TestReadServerEnvironment(t *testing.T) {
-	// очистим и установим переменные окружения
-	os.Setenv("ADDRESS", "127.0.0.1:9999")
-	os.Setenv("STORE_INTERVAL", "5")
-	os.Setenv("FILE_STORAGE_PATH", "/tmp/testfile.json")
-	os.Setenv("RESTORE", "false")
-	defer os.Clearenv()
+	env := map[string]string{
+		"ADDRESS":           "127.0.0.1:9999",
+		"STORE_INTERVAL":    "5",
+		"FILE_STORAGE_PATH": "/tmp/testfile.json",
+		"RESTORE":           "false",
+	}
 
-	// сбрасываем стандартный флаг-парсер
-	cfg := &ServerConfig{}
-	ReadServerEnvironment(cfg)
+	setEnvAndRun(t, env, func() {
+		cfg := &ServerConfig{}
+		readServerEnvironment(cfg)
 
-	if cfg.Addr != "127.0.0.1:9999" {
-		t.Errorf("expected addr from env, got %s", cfg.Addr)
-	}
-	if cfg.StoreInterval != 5 {
-		t.Errorf("expected interval=5, got %d", cfg.StoreInterval)
-	}
-	if cfg.FileStoragePath != "/tmp/testfile.json" {
-		t.Errorf("wrong path: %s", cfg.FileStoragePath)
-	}
-	if cfg.Restore != false {
-		t.Errorf("expected restore=false, got %v", cfg.Restore)
-	}
+		require.Equal(t, "127.0.0.1:9999", cfg.Addr)
+		require.Equal(t, 5, cfg.StoreInterval)
+		require.Equal(t, "/tmp/testfile.json", cfg.FileStoragePath)
+		require.False(t, cfg.Restore)
+	})
 }
 
 func TestReadClientEnvironment(t *testing.T) {
-	// очистим и установим переменные окружения
-	os.Setenv("ADDRESS", "127.0.0.1:9999")
-	os.Setenv("REPORT_INTERVAL", "5")
-	os.Setenv("POLL_INTERVAL", "1")
-	defer os.Clearenv()
+	env := map[string]string{
+		"ADDRESS":         "127.0.0.1:9999",
+		"REPORT_INTERVAL": "5",
+		"POLL_INTERVAL":   "1",
+	}
 
-	// сбрасываем стандартный флаг-парсер
-	cfg := &ClientConfig{}
-	ReadClientEnvironment(cfg)
+	setEnvAndRun(t, env, func() {
+		cfg := &ClientConfig{}
+		readClientEnvironment(cfg)
 
-	if cfg.ServerAddr != "127.0.0.1:9999" {
-		t.Errorf("expected addr from env, got %s", cfg.ServerAddr)
-	}
-	if cfg.ReportInterval != 5 {
-		t.Errorf("expected interval=5, got %d", cfg.ReportInterval)
-	}
-	if cfg.PollInterval != 1 {
-		t.Errorf("wrong path: %d", cfg.PollInterval)
-	}
+		require.Equal(t, "127.0.0.1:9999", cfg.ServerAddr)
+		require.Equal(t, 5, cfg.ReportInterval)
+		require.Equal(t, 1, cfg.PollInterval)
+	})
 }

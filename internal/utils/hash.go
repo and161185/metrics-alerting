@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 )
 
+// CalculateHash returns a SHA256 hash of the request body combined with the secret key.
 func CalculateHash(body []byte, key string) string {
 	h := sha256.New()
 	h.Write(body)

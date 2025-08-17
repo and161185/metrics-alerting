@@ -2,7 +2,7 @@ module github.com/and161185/metrics-alerting
 
 go 1.23.0
 
-toolchain go1.23.9
+toolchain go1.24.5
 
 require (
 	github.com/go-chi/chi v1.5.5

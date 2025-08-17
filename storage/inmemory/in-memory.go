@@ -12,17 +12,20 @@ import (
 	"github.com/and161185/metrics-alerting/model"
 )
 
+// MemStorage is an in-memory implementation of the Storage interface.
 type MemStorage struct {
 	metrics map[string]*model.Metric
 	mu      sync.RWMutex
 }
 
+// NewMemStorage creates a new MemStorage instance.
 func NewMemStorage(ctx context.Context) *MemStorage {
 	return &MemStorage{
 		metrics: make(map[string]*model.Metric),
 	}
 }
 
+// Save stores a single metric in memory.
 func (store *MemStorage) Save(ctx context.Context, m *model.Metric) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
@@ -45,6 +48,7 @@ func (store *MemStorage) Save(ctx context.Context, m *model.Metric) error {
 	return nil
 }
 
+// SaveBatch stores multiple metrics in memory.
 func (store *MemStorage) SaveBatch(ctx context.Context, metrics []model.Metric) error {
 	for _, m := range metrics {
 		err := store.Save(ctx, &m)
@@ -56,6 +60,7 @@ func (store *MemStorage) SaveBatch(ctx context.Context, metrics []model.Metric) 
 	return nil
 }
 
+// Get retrieves a metric by ID and type.
 func (store *MemStorage) Get(ctx context.Context, m *model.Metric) (*model.Metric, error) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -68,6 +73,7 @@ func (store *MemStorage) Get(ctx context.Context, m *model.Metric) (*model.Metri
 	return val, nil
 }
 
+// GetAll returns all stored metrics.
 func (store *MemStorage) GetAll(ctx context.Context) (map[string]*model.Metric, error) {
 	store.mu.RLock()
 	defer store.mu.RUnlock()
@@ -79,6 +85,7 @@ func (store *MemStorage) GetAll(ctx context.Context) (map[string]*model.Metric, 
 	return result, nil
 }
 
+// SaveToFile writes all metrics to the given file.
 func (store *MemStorage) SaveToFile(ctx context.Context, filePath string) error {
 
 	metrics, err := store.GetAll(ctx)
@@ -105,6 +112,7 @@ func (store *MemStorage) SaveToFile(ctx context.Context, filePath string) error 
 	return nil
 }
 
+// LoadFromFile loads metrics from the given file.
 func (store *MemStorage) LoadFromFile(ctx context.Context, filePath string) error {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -130,6 +138,7 @@ func (store *MemStorage) LoadFromFile(ctx context.Context, filePath string) erro
 	return nil
 }
 
+// Ping checks if the storage is available.
 func (store *MemStorage) Ping(ctx context.Context) error {
 	return nil
 }
