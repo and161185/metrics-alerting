@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -12,7 +13,33 @@ import (
 	"github.com/and161185/metrics-alerting/storage/inmemory"
 )
 
+var (
+	buildVersion string
+	buildDate    string
+	buildCommit  string
+)
+
+func printBuildInfo() {
+	v := buildVersion
+	if v == "" {
+		v = "N/A"
+	}
+	d := buildDate
+	if d == "" {
+		d = "N/A"
+	}
+	c := buildCommit
+	if c == "" {
+		c = "N/A"
+	}
+
+	fmt.Printf("Build version: %s\n", v)
+	fmt.Printf("Build date: %s\n", d)
+	fmt.Printf("Build commit: %s\n", c)
+}
+
 func main() {
+	printBuildInfo()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

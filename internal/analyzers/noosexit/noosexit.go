@@ -11,10 +11,6 @@ import (
 
 // Analyzer forbids direct os.Exit calls inside main() of package main.
 //
-// Rationale: main() should delegate to run() and return exit code, e.g.:
-//
-//	func main() { os.Exit(run()) }  // <- allowed
-//
 // This analyzer only flags direct calls *inside* main.main body.
 var Analyzer = &analysis.Analyzer{
 	Name: "noosexit",

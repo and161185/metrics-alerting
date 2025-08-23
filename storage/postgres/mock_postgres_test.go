@@ -2,7 +2,7 @@
 // Source: internal/server/server.go
 
 // Package mocks is a generated GoMock package.
-package mocks
+package postgres
 
 import (
 	context "context"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -12,7 +13,34 @@ import (
 	"github.com/and161185/metrics-alerting/storage/postgres"
 )
 
+var (
+	buildVersion string
+	buildDate    string
+	buildCommit  string
+)
+
+func printBuildInfo() {
+	v := buildVersion
+	if v == "" {
+		v = "N/A"
+	}
+	d := buildDate
+	if d == "" {
+		d = "N/A"
+	}
+	c := buildCommit
+	if c == "" {
+		c = "N/A"
+	}
+
+	fmt.Printf("Build version: %s\n", v)
+	fmt.Printf("Build date: %s\n", d)
+	fmt.Printf("Build commit: %s\n", c)
+}
+
 func main() {
+	printBuildInfo()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
