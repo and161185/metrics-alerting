@@ -1,3 +1,4 @@
+// Package testutils provides helper functions for server tests.
 package testutils
 
 import (

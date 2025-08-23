@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/and161185/metrics-alerting/model"
-	"github.com/and161185/metrics-alerting/storage/postgres/mocks"
 	"github.com/golang/mock/gomock"
 )
 
 func BenchmarkMockStorage_Save(b *testing.B) {
 	ctrl := gomock.NewController(b)
 	defer ctrl.Finish()
-	mockStorage := mocks.NewMockStorage(ctrl)
+	mockStorage := NewMockStorage(ctrl)
 	metric := &model.Metric{ID: "bench", Type: model.Gauge}
 	mockStorage.EXPECT().Save(gomock.Any(), metric).Return(nil).AnyTimes()
 
@@ -26,7 +25,7 @@ func BenchmarkMockStorage_Save(b *testing.B) {
 func BenchmarkMockStorage_Get(b *testing.B) {
 	ctrl := gomock.NewController(b)
 	defer ctrl.Finish()
-	mockStorage := mocks.NewMockStorage(ctrl)
+	mockStorage := NewMockStorage(ctrl)
 	metric := &model.Metric{ID: "bench", Type: model.Gauge}
 	mockStorage.EXPECT().Get(gomock.Any(), metric).Return(nil, nil).AnyTimes()
 
@@ -39,7 +38,7 @@ func BenchmarkMockStorage_Get(b *testing.B) {
 func BenchmarkMockStorage_GetAll(b *testing.B) {
 	ctrl := gomock.NewController(b)
 	defer ctrl.Finish()
-	mockStorage := mocks.NewMockStorage(ctrl)
+	mockStorage := NewMockStorage(ctrl)
 	mockStorage.EXPECT().GetAll(gomock.Any()).Return(nil, nil).AnyTimes()
 
 	b.ResetTimer()
@@ -51,7 +50,7 @@ func BenchmarkMockStorage_GetAll(b *testing.B) {
 func BenchmarkMockStorage_Ping(b *testing.B) {
 	ctrl := gomock.NewController(b)
 	defer ctrl.Finish()
-	mockStorage := mocks.NewMockStorage(ctrl)
+	mockStorage := NewMockStorage(ctrl)
 	mockStorage.EXPECT().Ping(gomock.Any()).Return(nil).AnyTimes()
 
 	b.ResetTimer()
