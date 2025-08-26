@@ -2,16 +2,22 @@ package buildinfo
 
 import "fmt"
 
-func PrintBuildInfo(buildVersion, buildDate, buildCommit string) {
-	v := buildVersion
+var (
+	BuildVersion string
+	BuildDate    string
+	BuildCommit  string
+)
+
+func PrintBuildInfo() {
+	v := BuildVersion
 	if v == "" {
 		v = "N/A"
 	}
-	d := buildDate
+	d := BuildDate
 	if d == "" {
 		d = "N/A"
 	}
-	c := buildCommit
+	c := BuildCommit
 	if c == "" {
 		c = "N/A"
 	}

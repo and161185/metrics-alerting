@@ -13,14 +13,8 @@ import (
 	"github.com/and161185/metrics-alerting/storage/postgres"
 )
 
-var (
-	buildVersion string
-	buildDate    string
-	buildCommit  string
-)
-
 func main() {
-	buildinfo.PrintBuildInfo(buildVersion, buildDate, buildCommit)
+	buildinfo.PrintBuildInfo()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

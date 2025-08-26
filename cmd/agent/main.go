@@ -13,14 +13,8 @@ import (
 	"github.com/and161185/metrics-alerting/storage/inmemory"
 )
 
-var (
-	buildVersion string
-	buildDate    string
-	buildCommit  string
-)
-
 func main() {
-	buildinfo.PrintBuildInfo(buildVersion, buildDate, buildCommit)
+	buildinfo.PrintBuildInfo()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
