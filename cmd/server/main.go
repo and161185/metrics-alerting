@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/and161185/metrics-alerting/internal/buildinfo"
 	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/internal/server"
 	"github.com/and161185/metrics-alerting/storage/inmemory"
@@ -13,6 +14,8 @@ import (
 )
 
 func main() {
+	buildinfo.PrintBuildInfo()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

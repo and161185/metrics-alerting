@@ -1,3 +1,4 @@
+// Package utils provides helper functions for hashing and related utilities.
 package utils
 
 import (

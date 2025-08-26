@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/and161185/metrics-alerting/internal/errs"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 )
@@ -72,5 +73,98 @@ func requireNoErr(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGet_NotFound(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemStorage(ctx)
+	_, err := st.Get(ctx, &model.Metric{ID: "nope", Type: model.Gauge})
+	if err == nil || err != errs.ErrMetricNotFound {
+		t.Fatalf("want ErrMetricNotFound, got %v", err)
+	}
+}
+
+func TestCounterFirstSetWhenExistingNilDelta(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemStorage(ctx)
+
+	requireNoErr(t, st.Save(ctx, &model.Metric{ID: "C", Type: model.Counter}))
+
+	requireNoErr(t, st.Save(ctx, &model.Metric{ID: "C", Type: model.Counter, Delta: utils.I64Ptr(7)}))
+
+	got, err := st.Get(ctx, &model.Metric{ID: "C", Type: model.Counter})
+	requireNoErr(t, err)
+	if got.Delta == nil || *got.Delta != 7 {
+		t.Fatalf("want 7, got %v", got.Delta)
+	}
+}
+
+func TestSaveBatch_SavesAll(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemStorage(ctx)
+	ms := []model.Metric{
+		{ID: "g1", Type: model.Gauge, Value: utils.F64Ptr(1)},
+		{ID: "c1", Type: model.Counter, Delta: utils.I64Ptr(2)},
+	}
+	requireNoErr(t, st.SaveBatch(ctx, ms))
+
+	all, _ := st.GetAll(ctx)
+	if _, ok := all["g1"]; !ok {
+		t.Fatal("g1 not saved")
+	}
+	if _, ok := all["c1"]; !ok {
+		t.Fatal("c1 not saved")
+	}
+}
+
+func TestGetAll_ReturnsMapCopy(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemStorage(ctx)
+	requireNoErr(t, st.Save(ctx, &model.Metric{ID: "keep", Type: model.Gauge, Value: utils.F64Ptr(1)}))
+
+	m1, _ := st.GetAll(ctx)
+	delete(m1, "keep")
+
+	_, err := st.Get(ctx, &model.Metric{ID: "keep", Type: model.Gauge})
+	requireNoErr(t, err)
+}
+
+func TestSaveToFile_NoMetrics_NoFile(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemStorage(ctx)
+
+	tmp := "empty.json"
+	_ = os.Remove(tmp)
+	requireNoErr(t, st.SaveToFile(ctx, tmp))
+
+	if _, err := os.Stat(tmp); err == nil {
+		t.Fatalf("file should not be created for empty metrics")
+	}
+}
+
+func TestLoadFromFile_NoFile_OK(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemStorage(ctx)
+	requireNoErr(t, st.LoadFromFile(ctx, "no_such_file_123456.json"))
+}
+
+func TestLoadFromFile_BadJSON(t *testing.T) {
+	ctx := context.Background()
+	tmp := "bad.json"
+	_ = os.WriteFile(tmp, []byte("{not json]"), 0644)
+	defer os.Remove(tmp)
+
+	st := NewMemStorage(ctx)
+	if err := st.LoadFromFile(ctx, tmp); err == nil {
+		t.Fatal("want error on bad json")
+	}
+}
+
+func TestPing_OK(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemStorage(ctx)
+	if err := st.Ping(ctx); err != nil {
+		t.Fatalf("unexpected: %v", err)
 	}
 }

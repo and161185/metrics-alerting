@@ -1,3 +1,4 @@
+// Package collector gathers and processes metrics data.
 package collector
 
 import (

@@ -80,3 +80,63 @@ func TestNewMetric(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckMetric(t *testing.T) {
+	t.Run("counter_without_delta", func(t *testing.T) {
+		err := CheckMetric(&model.Metric{Type: model.Counter, Delta: nil})
+		require.Error(t, err)
+	})
+	t.Run("gauge_without_value", func(t *testing.T) {
+		err := CheckMetric(&model.Metric{Type: model.Gauge, Value: nil})
+		require.Error(t, err)
+	})
+	t.Run("invalid_type", func(t *testing.T) {
+		err := CheckMetric(&model.Metric{Type: model.MetricType("wtf")})
+		require.Error(t, err)
+	})
+	t.Run("ok_counter", func(t *testing.T) {
+		d := int64(10)
+		err := CheckMetric(&model.Metric{Type: model.Counter, Delta: &d})
+		require.NoError(t, err)
+	})
+	t.Run("ok_gauge", func(t *testing.T) {
+		v := 3.14
+		err := CheckMetric(&model.Metric{Type: model.Gauge, Value: &v})
+		require.NoError(t, err)
+	})
+}
+
+func Test_invalidMetricsType(t *testing.T) {
+	require.True(t, invalidMetricsType(model.MetricType("x")))
+	require.False(t, invalidMetricsType(model.Gauge))
+	require.False(t, invalidMetricsType(model.Counter))
+}
+
+func Test_getMetricsValue(t *testing.T) {
+	t.Run("gauge_float_ok", func(t *testing.T) {
+		v, err := getMetricsValue("12.5", model.Gauge)
+		require.NoError(t, err)
+		require.InEpsilon(t, 12.5, v, 1e-9)
+	})
+	t.Run("counter_int_ok", func(t *testing.T) {
+		v, err := getMetricsValue("42", model.Counter)
+		require.NoError(t, err)
+		require.Equal(t, float64(42), v)
+	})
+	t.Run("counter_fraction_err", func(t *testing.T) {
+		_, err := getMetricsValue("1.1", model.Counter)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "int64")
+	})
+	t.Run("parse_err", func(t *testing.T) {
+		_, err := getMetricsValue("abc", model.Gauge)
+		require.Error(t, err)
+	})
+}
+
+func TestNewMetric_setsDeltaAsInt64(t *testing.T) {
+	m, err := NewMetric("counter", "ops", "7")
+	require.NoError(t, err)
+	require.NotNil(t, m.Delta)
+	require.EqualValues(t, 7, *m.Delta)
+}
