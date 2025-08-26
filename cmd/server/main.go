@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/and161185/metrics-alerting/internal/buildinfo"
 	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/internal/server"
 	"github.com/and161185/metrics-alerting/storage/inmemory"
@@ -19,27 +19,8 @@ var (
 	buildCommit  string
 )
 
-func printBuildInfo() {
-	v := buildVersion
-	if v == "" {
-		v = "N/A"
-	}
-	d := buildDate
-	if d == "" {
-		d = "N/A"
-	}
-	c := buildCommit
-	if c == "" {
-		c = "N/A"
-	}
-
-	fmt.Printf("Build version: %s\n", v)
-	fmt.Printf("Build date: %s\n", d)
-	fmt.Printf("Build commit: %s\n", c)
-}
-
 func main() {
-	printBuildInfo()
+	buildinfo.PrintBuildInfo(buildVersion, buildDate, buildCommit)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

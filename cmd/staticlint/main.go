@@ -11,52 +11,56 @@
 // Examples:
 //
 //	./staticlint ./...
-//	./staticlint $(go list ./... | grep -v '/cmd/staticlint$') // исключить сам multichecker
+//	./staticlint $(go list ./... | grep -v '/cmd/staticlint$') // exclude multichecker
 //
 // Analyzers:
 //
 // Std passes (golang.org/x/tools/go/analysis/passes):
-//   asmdecl        — verifies consistency between asm and Go declarations.
-//   assign         — detects suspicious or useless assignments.
-//   atomic         — checks correct usage of sync/atomic.
-//   bools          — flags common mistakes in boolean expressions.
-//   buildtag       — validates build tags.
-//   cgocall        — warns about unsafe patterns in cgo calls/pointers.
-//   composite      — detects errors in composite literals.
-//   copylock       — reports copying of values containing mutexes (sync.Mutex, etc.).
-//   errorsas       — checks proper use of errors.As.
-//   framepointer   — checks frame pointer usage in builds/assembly.
-//   httpresponse   — flags common mistakes when working with net/http responses.
-//   ifaceassert    — detects unsafe type assertions.
-//   loopclosure    — warns about loop variables captured by closures.
-//   lostcancel     — finds missing cancel() calls for context.WithCancel/Timeout/Deadline.
-//   nilfunc        — detects calls through nil function values.
-//   printf         — checks printf-like calls for argument consistency.
-//   shadow         — reports variable shadowing.
-//   shift          — detects incorrect shifts (sign, size, overflow).
-//   sigchanyzer    — detects misuse of os.Signal channels.
-//   stdmethods     — checks signatures of standard interfaces (error, Stringer, etc.).
-//   stringintconv  — flags suspicious string↔int conversions.
-//   structtag      — checks format and validity of struct tags.
-//   tests          — flags common mistakes in testing code.
-//   unmarshal      — reports issues when unmarshalling into struct fields.
-//   unreachable    — detects unreachable code.
-//   unsafeptr      — warns about unsafe.Pointer conversions.
-//   unusedresult   — detects ignored results of calls where results must be used.
+//
+//	asmdecl        — verifies consistency between asm and Go declarations.
+//	assign         — detects suspicious or useless assignments.
+//	atomic         — checks correct usage of sync/atomic.
+//	bools          — flags common mistakes in boolean expressions.
+//	buildtag       — validates build tags.
+//	cgocall        — warns about unsafe patterns in cgo calls/pointers.
+//	composite      — detects errors in composite literals.
+//	copylock       — reports copying of values containing mutexes (sync.Mutex, etc.).
+//	errorsas       — checks proper use of errors.As.
+//	framepointer   — checks frame pointer usage in builds/assembly.
+//	httpresponse   — flags common mistakes when working with net/http responses.
+//	ifaceassert    — detects unsafe type assertions.
+//	loopclosure    — warns about loop variables captured by closures.
+//	lostcancel     — finds missing cancel() calls for context.WithCancel/Timeout/Deadline.
+//	nilfunc        — detects calls through nil function values.
+//	printf         — checks printf-like calls for argument consistency.
+//	shadow         — reports variable shadowing.
+//	shift          — detects incorrect shifts (sign, size, overflow).
+//	sigchanyzer    — detects misuse of os.Signal channels.
+//	stdmethods     — checks signatures of standard interfaces (error, Stringer, etc.).
+//	stringintconv  — flags suspicious string↔int conversions.
+//	structtag      — checks format and validity of struct tags.
+//	tests          — flags common mistakes in testing code.
+//	unmarshal      — reports issues when unmarshalling into struct fields.
+//	unreachable    — detects unreachable code.
+//	unsafeptr      — warns about unsafe.Pointer conversions.
+//	unusedresult   — detects ignored results of calls where results must be used.
 //
 // Staticcheck (honnef.co/go/tools) — all SA* (bug-finding rules).
-//   Example: SA4006 (unnecessary assignment), SA1019 (deprecated API), SA5008 (invalid struct tags).
+//
+//	Example: SA4006 (unnecessary assignment), SA1019 (deprecated API), SA5008 (invalid struct tags).
 //
 // Other staticcheck class:
-//   ST1000 (stylecheck) — requires a package comment in the package.
+//
+//	ST1000 (stylecheck) — requires a package comment in the package.
 //
 // Public analyzers:
-//   bodyclose (github.com/timakin/bodyclose) — ensures http.Response.Body is closed.
-//   nilerr    (github.com/gostaticanalysis/nilerr) — in an `if err != nil` branch, returning a nil error.
+//
+//	bodyclose (github.com/timakin/bodyclose) — ensures http.Response.Body is closed.
+//	nilerr    (github.com/gostaticanalysis/nilerr) — in an `if err != nil` branch, returning a nil error.
 //
 // Custom:
-//   noosexit — forbids direct os.Exit inside main.main; skips go-build cache files and generated code (Code generated …).
-
+//
+//	noosexit — forbids direct os.Exit inside main.main; skips go-build cache files and generated code (Code generated …).
 package main
 
 import (
