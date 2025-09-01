@@ -1,3 +1,4 @@
+// Package metrics contains metric types and related handlers.
 package metrics
 
 import (

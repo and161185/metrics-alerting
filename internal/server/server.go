@@ -1,3 +1,4 @@
+// Package server implements the HTTP server for metrics handling.
 package server
 
 import (
@@ -19,7 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Storage defines the interface for a metrics storage.
+// Storage provides metric storage operations.
 type Storage interface {
 	// Save stores a single metric.
 	Save(ctx context.Context, metric *model.Metric) error
@@ -38,7 +39,7 @@ type fileBackedStore interface {
 	LoadFromFile(ctx context.Context, path string) error
 }
 
-// Server represents an HTTP server for handling metrics.
+// Server serves the metrics HTTP API.
 type Server struct {
 	Storage   Storage
 	Config    *config.ServerConfig
@@ -276,9 +277,9 @@ func (srv *Server) GetMetricHandler(w http.ResponseWriter, r *http.Request) {
 
 	var storedMetric *model.Metric
 	err = utils.WithRetry(ctx, func() error {
-		var err error
-		storedMetric, err = srv.Storage.Get(ctx, metric)
-		return err
+		var getErr error
+		storedMetric, getErr = srv.Storage.Get(ctx, metric)
+		return getErr
 	})
 
 	if err != nil {

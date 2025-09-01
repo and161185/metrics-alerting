@@ -7,12 +7,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/and161185/metrics-alerting/internal/buildinfo"
 	"github.com/and161185/metrics-alerting/internal/client"
 	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/storage/inmemory"
 )
 
 func main() {
+	buildinfo.PrintBuildInfo()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

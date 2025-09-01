@@ -1,3 +1,4 @@
+// Package client provides functions for interacting with the metrics server.
 package client
 
 import (
@@ -153,10 +154,10 @@ func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) err
 
 	var body bytes.Buffer
 	zw := gzip.NewWriter(&body)
-	if _, err := zw.Write(bodyRaw); err != nil {
+	if _, err = zw.Write(bodyRaw); err != nil {
 		return fmt.Errorf("gzip write: %w", err)
 	}
-	if err := zw.Close(); err != nil {
+	if err = zw.Close(); err != nil {
 		return fmt.Errorf("gzip close: %w", err)
 	}
 
@@ -174,9 +175,9 @@ func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) err
 
 	var statusCode int
 	err = utils.WithRetry(ctx, func() error {
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			return err
+		resp, reqErr := httpClient.Do(req)
+		if reqErr != nil {
+			return reqErr
 		}
 		defer resp.Body.Close()
 
@@ -226,10 +227,10 @@ func (clnt *Client) sendToServer(ctx context.Context) error {
 
 	var body bytes.Buffer
 	zw := gzip.NewWriter(&body)
-	if _, err := zw.Write(bodyRaw); err != nil {
+	if _, err = zw.Write(bodyRaw); err != nil {
 		return fmt.Errorf("gzip write: %w", err)
 	}
-	if err := zw.Close(); err != nil {
+	if err = zw.Close(); err != nil {
 		return fmt.Errorf("gzip close: %w", err)
 	}
 
@@ -247,9 +248,9 @@ func (clnt *Client) sendToServer(ctx context.Context) error {
 
 	var statusCode int
 	err = utils.WithRetry(ctx, func() error {
-		resp, err := httpClient.Do(req)
-		if err != nil {
-			return err
+		resp, reqErr := httpClient.Do(req)
+		if reqErr != nil {
+			return reqErr
 		}
 		defer resp.Body.Close()
 

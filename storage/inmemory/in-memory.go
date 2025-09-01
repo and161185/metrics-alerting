@@ -1,3 +1,4 @@
+// Package inmemory implements an in-memory storage for metrics.
 package inmemory
 
 import (
