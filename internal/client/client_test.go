@@ -45,7 +45,10 @@ func TestSendToServer_OK(t *testing.T) {
 	m := model.Metric{ID: "TestMetric", Type: model.Gauge, Value: utils.F64Ptr(42)}
 	require.NoError(t, st.Save(ctx, &m))
 
-	c := NewClient(st, &config.ClientConfig{ServerAddr: ts.URL, ClientTimeout: 1})
+	c, err := NewClient(st, &config.ClientConfig{ServerAddr: ts.URL, ClientTimeout: 1})
+	if err != nil {
+		t.Fatalf("client constructor error: %v", err)
+	}
 	require.NoError(t, c.sendToServer(ctx))
 }
 
@@ -60,10 +63,13 @@ func TestSendToServer_ErrorStatus(t *testing.T) {
 	m := model.Metric{ID: "x", Type: model.Gauge, Value: utils.F64Ptr(1)}
 	_ = st.Save(ctx, &m)
 
-	c := NewClient(st, &config.ClientConfig{ServerAddr: ts.URL, ClientTimeout: 1})
-	err := c.sendToServer(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unexpected status")
+	c, err := NewClient(st, &config.ClientConfig{ServerAddr: ts.URL, ClientTimeout: 1})
+	if err != nil {
+		t.Fatalf("client constructor error: %v", err)
+	}
+	err2 := c.sendToServer(ctx)
+	require.Error(t, err2)
+	require.Contains(t, err2.Error(), "unexpected status")
 }
 
 func TestSendMetricToServer_OK(t *testing.T) {
@@ -83,7 +89,10 @@ func TestSendMetricToServer_OK(t *testing.T) {
 	st := inmemory.NewMemStorage(ctx)
 	m := &model.Metric{ID: "X", Type: model.Gauge, Value: utils.F64Ptr(1)}
 
-	c := NewClient(st, &config.ClientConfig{ServerAddr: ts.URL, ClientTimeout: 1})
+	c, err := NewClient(st, &config.ClientConfig{ServerAddr: ts.URL, ClientTimeout: 1})
+	if err != nil {
+		t.Fatalf("client constructor error: %v", err)
+	}
 	require.NoError(t, c.sendMetricToServer(ctx, m))
 }
 
@@ -97,10 +106,13 @@ func TestSendMetricToServer_Error(t *testing.T) {
 	st := inmemory.NewMemStorage(ctx)
 	m := &model.Metric{ID: "X", Type: model.Gauge, Value: utils.F64Ptr(1)}
 
-	c := NewClient(st, &config.ClientConfig{ServerAddr: ts.URL, ClientTimeout: 1})
-	err := c.sendMetricToServer(ctx, m)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unexpected status")
+	c, err := NewClient(st, &config.ClientConfig{ServerAddr: ts.URL, ClientTimeout: 1})
+	if err != nil {
+		t.Fatalf("client constructor errer: %v", err)
+	}
+	err2 := c.sendMetricToServer(ctx, m)
+	require.Error(t, err2)
+	require.Contains(t, err2.Error(), "unexpected status")
 }
 
 func TestCollectAndSave(t *testing.T) {
@@ -175,6 +187,9 @@ func TestClientRun_StartsAndStops(t *testing.T) {
 	defer cancel()
 	st := inmemory.NewMemStorage(ctx)
 	cfg := &config.ClientConfig{PollInterval: 1, ReportInterval: 1, RateLimit: 1, ClientTimeout: 1}
-	c := NewClient(st, cfg)
+	c, err := NewClient(st, cfg)
+	if err != nil {
+		t.Fatalf("client constructor errer: %v", err)
+	}
 	require.NoError(t, c.Run(ctx))
 }

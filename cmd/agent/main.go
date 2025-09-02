@@ -21,7 +21,10 @@ func main() {
 
 	config := config.NewClientConfig()
 	storage := inmemory.NewMemStorage(ctx)
-	clnt := client.NewClient(storage, config)
+	clnt, err := client.NewClient(storage, config)
+	if err != nil {
+		log.Fatalf("client constructor error: %v", err)
+	}
 
 	log.Printf("Client config: ServerAddr=%s, ReportInterval=%d, PollInterval=%d, Timeout=%d",
 		config.ServerAddr, config.ReportInterval, config.PollInterval, config.ClientTimeout)

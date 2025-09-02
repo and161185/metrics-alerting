@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,28 +42,31 @@ type fileBackedStore interface {
 
 // Server serves the metrics HTTP API.
 type Server struct {
-	Storage   Storage
-	Config    *config.ServerConfig
-	FileStore fileBackedStore
+	Storage    Storage
+	Config     *config.ServerConfig
+	FileStore  fileBackedStore
+	PrivateKey *rsa.PrivateKey
 }
 
 // NewServer creates a new server instance with the given storage and configuration.
-func NewServer(storage Storage, config *config.ServerConfig) *Server {
+func NewServer(storage Storage, config *config.ServerConfig, priv *rsa.PrivateKey) *Server {
 	fileStore, _ := storage.(fileBackedStore)
 
 	return &Server{
-		Storage:   storage,
-		Config:    config,
-		FileStore: fileStore,
+		Storage:    storage,
+		Config:     config,
+		FileStore:  fileStore,
+		PrivateKey: priv,
 	}
 }
 
 func (srv *Server) buildRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.StripSlashes)
-	router.Use(middleware.LogMiddleware(srv.Config.Logger))
-	router.Use(middleware.VerifyHashMiddleware(srv.Config))
+	router.Use(middleware.DecryptMiddleware(srv.PrivateKey, true))
 	router.Use(middleware.DecompressMiddleware)
+	router.Use(middleware.VerifyHashMiddleware(srv.Config))
+	router.Use(middleware.LogMiddleware(srv.Config.Logger))
 	router.Use(middleware.CompressMiddleware)
 	router.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
 	router.Post("/update", srv.UpdateMetricHandlerJSON)

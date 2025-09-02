@@ -20,6 +20,7 @@ type ClientConfig struct {
 	ClientTimeout  int    // HTTP client timeout (in seconds)
 	Key            string // Key for hash generation
 	RateLimit      int    // Limit on simultaneous outgoing requests
+	CryptoKeyPath  string // Path to public key
 }
 
 // ServerConfig holds the configuration settings for the server.
@@ -31,6 +32,7 @@ type ServerConfig struct {
 	Restore         bool   // Whether to restore metrics from file on startup
 	DatabaseDsn     string // Data Source Name for PostgreSQL
 	Key             string // Key for hash verification
+	CryptoKeyPath   string // Path to private key
 }
 
 // NewServerConfig creates and returns a new ServerConfig by parsing flags and environment variables.
@@ -47,6 +49,7 @@ func NewServerConfig() *ServerConfig {
 	flag.BoolVar(&cfg.Restore, "r", true, "load metrics from last file")
 	flag.StringVar(&cfg.DatabaseDsn, "d", "", "DB connection string")
 	flag.StringVar(&cfg.Key, "k", "", "Hash key string")
+	flag.StringVar(&cfg.CryptoKeyPath, "crypto-key", "", "Path to private key")
 	flag.Parse()
 
 	cfg.Logger = logger.Sugar()
@@ -92,6 +95,10 @@ func readServerEnvironment(cfg *ServerConfig) {
 	if key := os.Getenv("KEY"); key != "" {
 		cfg.Key = key
 	}
+
+	if cryptokey := os.Getenv("CRYPTO_KEY"); cryptokey != "" {
+		cfg.CryptoKeyPath = cryptokey
+	}
 }
 
 // NewClientConfig creates and returns a new ClientConfig by parsing flags and environment variables.
@@ -103,6 +110,7 @@ func NewClientConfig() *ClientConfig {
 	flag.IntVar(&cfg.ClientTimeout, "t", 10, "client timeout")
 	flag.StringVar(&cfg.Key, "k", "", "Hash key string")
 	flag.IntVar(&cfg.RateLimit, "l", runtime.NumCPU(), "rate limit")
+	flag.StringVar(&cfg.CryptoKeyPath, "crypto-key", "", "Path to public key")
 	flag.Parse()
 
 	readClientEnvironment(cfg)
@@ -141,5 +149,9 @@ func readClientEnvironment(cfg *ClientConfig) {
 
 	if key := os.Getenv("KEY"); key != "" {
 		cfg.Key = key
+	}
+
+	if cryptokey := os.Getenv("CRYPTO_KEY"); cryptokey != "" {
+		cfg.CryptoKeyPath = cryptokey
 	}
 }

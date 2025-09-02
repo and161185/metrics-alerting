@@ -34,3 +34,6 @@ profiles/
 # IDEs directories
 .idea
 .vscode
+
+#keys
+*.pem

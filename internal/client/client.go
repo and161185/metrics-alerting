@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/and161185/metrics-alerting/cmd/agent/collector"
+	"github.com/and161185/metrics-alerting/internal/client/transport"
 	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/crypto"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
 )
@@ -31,30 +33,42 @@ type Client struct {
 }
 
 // NewClient creates a new client instance with the given storage and configuration.
-func NewClient(storage storage, config *config.ClientConfig) *Client {
+func NewClient(storage storage, config *config.ClientConfig) (*Client, error) {
 
+	hc := &http.Client{Timeout: time.Duration(config.ClientTimeout) * time.Second}
+
+	var rt http.RoundTripper = http.DefaultTransport
+	if config.CryptoKeyPath != "" {
+		pub, err := crypto.LoadPublicKey(config.CryptoKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("load public key: %w", err)
+		}
+		rt = &transport.EncryptRoundTripper{Base: http.DefaultTransport, PubKey: pub}
+	}
+
+	hc.Transport = rt
 	return &Client{
 		storage:    storage,
 		config:     config,
-		httpClient: &http.Client{Timeout: time.Duration(config.ClientTimeout) * time.Second},
-	}
+		httpClient: hc,
+	}, nil
 }
 
 // Run starts collecting metrics and sending them to the server in the background.
 func (clnt *Client) Run(ctx context.Context) error {
 
 	store := clnt.storage
-	pollInterval := clnt.config.PollInterval
-	reportInterval := clnt.config.ReportInterval
+	pollInterval := time.Duration(clnt.config.PollInterval) * time.Second
+	reportInterval := time.Duration(clnt.config.ReportInterval) * time.Second
 	rateLimit := clnt.config.RateLimit
 
-	go runtimeCollector(ctx, store, time.Duration(pollInterval))
+	go runtimeCollector(ctx, store, pollInterval)
 
-	go gopsutilCollector(ctx, store, time.Duration(pollInterval))
+	go gopsutilCollector(ctx, store, pollInterval)
 
 	metricsChan := make(chan *model.Metric, rateLimit)
 
-	go dispatchMetrics(ctx, store, metricsChan, time.Duration(reportInterval))
+	go dispatchMetrics(ctx, store, metricsChan, reportInterval)
 
 	for i := 0; i < rateLimit; i++ {
 		go func() {

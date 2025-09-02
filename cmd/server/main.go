@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
+	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/and161185/metrics-alerting/internal/buildinfo"
 	"github.com/and161185/metrics-alerting/internal/config"
+	"github.com/and161185/metrics-alerting/internal/crypto"
 	"github.com/and161185/metrics-alerting/internal/server"
 	"github.com/and161185/metrics-alerting/storage/inmemory"
 	"github.com/and161185/metrics-alerting/storage/postgres"
@@ -42,7 +45,16 @@ func main() {
 		config.DatabaseDsn != "",
 	)
 
-	srv := server.NewServer(storage, config)
+	var priv *rsa.PrivateKey
+	if config.CryptoKeyPath != "" {
+		var err error
+		priv, err = crypto.LoadPrivateKey(config.CryptoKeyPath)
+		if err != nil {
+			log.Fatalf("failed to load private key: %v", err)
+		}
+	}
+
+	srv := server.NewServer(storage, config, priv)
 	if err := srv.Run(ctx); err != nil {
 		config.Logger.Fatal(err)
 	}
