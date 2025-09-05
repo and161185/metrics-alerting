@@ -23,6 +23,7 @@ func main() {
 	defer stop()
 
 	config := config.NewServerConfig()
+	defer func() { _ = config.Logger.Sync() }()
 
 	var (
 		storage server.Storage

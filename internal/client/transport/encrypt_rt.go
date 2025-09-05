@@ -11,7 +11,7 @@ import (
 
 type EncryptRoundTripper struct {
 	Base   http.RoundTripper
-	PubKey *rsa.PublicKey // импортируй "crypto/rsa" тут, это норм
+	PubKey *rsa.PublicKey
 }
 
 func (e *EncryptRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -23,7 +23,7 @@ func (e *EncryptRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 		return rt.RoundTrip(req)
 	}
 
-	plain, err := io.ReadAll(req.Body) // здесь уже gzipped JSON
+	plain, err := io.ReadAll(req.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func (e *EncryptRoundTripper) RoundTrip(req *http.Request) (*http.Response, erro
 	req.ContentLength = int64(len(envBytes))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Encrypted", "v1")
-	req.Header.Del("Content-Encoding") // gzip внутри
+	req.Header.Del("Content-Encoding")
 
 	return rt.RoundTrip(req)
 }

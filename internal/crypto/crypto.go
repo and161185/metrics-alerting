@@ -66,7 +66,7 @@ func LoadPublicKeyFromBytes(pemBytes []byte) (*rsa.PublicKey, error) {
 			return rsaPub, nil
 
 		default:
-			// игнорируем посторонние блоки (например, сертификаты), пытаемся найти подходящий
+
 			continue
 		}
 	}

@@ -33,14 +33,13 @@ func gz(b []byte) []byte {
 }
 
 func TestEncryptRoundTripper_EndToEnd(t *testing.T) {
-	// генерим ключи
+
 	priv, pub := genKey(t)
 
-	// поднимаем сервер с DecryptMiddleware
 	r := chi.NewRouter()
 	r.Use(middleware.DecryptMiddleware(priv, true))
 	r.Post("/update", func(w http.ResponseWriter, r *http.Request) {
-		// после миддлы в body лежит gzipped JSON
+
 		gzBody, _ := io.ReadAll(r.Body)
 		gr, _ := gzip.NewReader(bytes.NewReader(gzBody))
 		defer gr.Close()
@@ -58,12 +57,10 @@ func TestEncryptRoundTripper_EndToEnd(t *testing.T) {
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
-	// клиент с EncryptRoundTripper
 	cl := &http.Client{
 		Transport: &EncryptRoundTripper{Base: http.DefaultTransport, PubKey: pub},
 	}
 
-	// готовим gzipped JSON
 	payload := gz([]byte(`{"ok":true}`))
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/update", bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
@@ -80,12 +77,11 @@ func TestEncryptRoundTripper_EndToEnd(t *testing.T) {
 }
 
 func TestEncryptRoundTripper_NoKey_PassThrough(t *testing.T) {
-	// сервер без decrypt (примет как есть)
 	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Encrypted") != "" {
 			t.Fatalf("should not set X-Encrypted without key")
 		}
-		// тело должно быть тем же, что отправили
+
 		body, _ := io.ReadAll(r.Body)
 		if len(body) == 0 {
 			t.Fatal("empty body")

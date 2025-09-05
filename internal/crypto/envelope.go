@@ -35,7 +35,6 @@ type Envelope struct {
 	CT  string `json:"ct"` // base64(ciphertext+tag)
 }
 
-// EncryptEnvelope: plain -> (gzip уже снаружи, если нужно) -> AES-GCM -> RSA-OAEP(key) -> JSON
 func EncryptEnvelope(pub *rsa.PublicKey, plain []byte) ([]byte, error) {
 	if pub == nil {
 		return nil, ErrNilKey
@@ -60,7 +59,6 @@ func EncryptEnvelope(pub *rsa.PublicKey, plain []byte) ([]byte, error) {
 	}
 	ct := gcm.Seal(nil, iv, plain, nil)
 
-	// RSA-OAEP(SHA-256) для ключа
 	ek, err := rsa.EncryptOAEP(sha256.New(), rand.Reader, pub, aesKey, nil)
 	if err != nil {
 		return nil, err
@@ -77,7 +75,6 @@ func EncryptEnvelope(pub *rsa.PublicKey, plain []byte) ([]byte, error) {
 	return json.Marshal(env)
 }
 
-// DecryptEnvelope: JSON-конверт -> RSA-OAEP(key) -> AES-GCM -> plain (gzipped JSON – если ты так отправлял)
 func DecryptEnvelope(priv *rsa.PrivateKey, envBytes []byte) ([]byte, error) {
 	if priv == nil {
 		return nil, ErrNilKey

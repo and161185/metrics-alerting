@@ -37,3 +37,6 @@ profiles/
 
 #keys
 *.pem
+
+#local settings
+server.json

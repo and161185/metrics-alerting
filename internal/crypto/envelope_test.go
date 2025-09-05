@@ -74,14 +74,13 @@ func TestDecryptEnvelope_Tamper_CT(t *testing.T) {
 		t.Fatalf("encrypt: %v", err)
 	}
 
-	// ковыряем байт в base64(ct)
 	idx := bytes.LastIndex(env, []byte(`"ct":"`))
 	if idx < 0 {
 		t.Fatal("no ct field?")
 	}
 	start := idx + len(`"ct":"`)
 	for i := start; i < len(env); i++ {
-		if env[i] != '"' { // меняем первый байт полезной части
+		if env[i] != '"' {
 			env[i] ^= 1
 			break
 		}
