@@ -63,10 +63,10 @@ func NewServer(storage Storage, config *config.ServerConfig, priv *rsa.PrivateKe
 func (srv *Server) buildRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.StripSlashes)
-	router.Use(middleware.DecryptMiddleware(srv.PrivateKey, true))
-	router.Use(middleware.DecompressMiddleware)
-	router.Use(middleware.VerifyHashMiddleware(srv.Config))
+	router.Use(middleware.DecryptMiddleware(srv.PrivateKey, false))
 	router.Use(middleware.LogMiddleware(srv.Config.Logger))
+	router.Use(middleware.VerifyHashMiddleware(srv.Config))
+	router.Use(middleware.DecompressMiddleware)
 	router.Use(middleware.CompressMiddleware)
 	router.Post("/update/{type}/{name}/{value}", srv.UpdateMetricHandler)
 	router.Post("/update", srv.UpdateMetricHandlerJSON)
@@ -81,46 +81,55 @@ func (srv *Server) buildRouter() http.Handler {
 // Run starts the HTTP server and, if configured, periodically saves metrics to a file.
 func (srv *Server) Run(ctx context.Context) error {
 	router := srv.buildRouter()
+	httpSrv := &http.Server{Addr: srv.Config.Addr, Handler: router}
 
-	server := &http.Server{
-		Addr:    srv.Config.Addr,
-		Handler: router,
-	}
-
-	if srv.Config.Restore && srv.FileStore != nil {
-		if err := srv.FileStore.LoadFromFile(ctx, srv.Config.FileStoragePath); err != nil {
+	// Restore from file (count load)
+	if srv.Config.Restore && srv.FileStore != nil && srv.Config.FileStoragePath != "" {
+		if err := srv.FileStore.LoadFromFile(context.Background(), srv.Config.FileStoragePath); err != nil {
 			srv.Config.Logger.Warnf("failed to restore metrics from file: %v", err)
 		}
 	}
 
-	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			srv.Config.Logger.Fatalf("server error: %v", err)
-		}
-	}()
-
+	// autosave ticker (respect ctx)
+	var ticker *time.Ticker
 	if srv.Config.StoreInterval > 0 && srv.FileStore != nil {
-		ticker := time.NewTicker(time.Duration(srv.Config.StoreInterval) * time.Second)
+		ticker = time.NewTicker(time.Duration(srv.Config.StoreInterval) * time.Second)
 		go func() {
-			for range ticker.C {
-				if err := srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath); err != nil {
-					srv.Config.Logger.Errorf("auto-save failed: %v", err)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					_ = srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath)
 				}
 			}
 		}()
 	}
 
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			srv.Config.Logger.Fatalf("server error: %v", err)
+		}
+	}()
+
 	<-ctx.Done()
 
-	if srv.Config.FileStoragePath != "" && srv.FileStore != nil {
-		if err := srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath); err != nil {
-			log.Printf("save failed: %v", err)
-		}
+	if ticker != nil {
+		ticker.Stop()
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	sdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	return server.Shutdown(shutdownCtx)
+	_ = httpSrv.Shutdown(sdCtx)
+
+	if srv.Config.FileStoragePath != "" && srv.FileStore != nil {
+		_ = srv.FileStore.SaveToFile(context.Background(), srv.Config.FileStoragePath)
+	}
+	if closer, ok := srv.Storage.(interface{ Close(context.Context) error }); ok {
+		_ = closer.Close(context.Background())
+	}
+	return nil
 }
 
 // UpdateMetricHandler handles updating a metric via URL parameters.

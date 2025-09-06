@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -16,8 +17,8 @@ import (
 func main() {
 	buildinfo.PrintBuildInfo()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+	defer stop()
 
 	config := config.NewClientConfig()
 	storage := inmemory.NewMemStorage(ctx)
@@ -29,14 +30,8 @@ func main() {
 	log.Printf("Client config: ServerAddr=%s, ReportInterval=%d, PollInterval=%d, Timeout=%d",
 		config.ServerAddr, config.ReportInterval, config.PollInterval, config.ClientTimeout)
 
-	go func() {
-		if err := clnt.Run(ctx); err != nil {
-			log.Fatal(err)
-		}
-	}()
-
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-	log.Println("shutting down...")
+	if err := clnt.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		log.Fatal(err)
+	}
+	log.Println("shutting down")
 }

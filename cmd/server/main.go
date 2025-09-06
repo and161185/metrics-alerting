@@ -19,7 +19,7 @@ import (
 func main() {
 	buildinfo.PrintBuildInfo()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
 
 	config := config.NewServerConfig()

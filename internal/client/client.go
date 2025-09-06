@@ -6,10 +6,12 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/and161185/metrics-alerting/cmd/agent/collector"
@@ -56,103 +58,128 @@ func NewClient(storage storage, config *config.ClientConfig) (*Client, error) {
 
 // Run starts collecting metrics and sending them to the server in the background.
 func (clnt *Client) Run(ctx context.Context) error {
-
 	store := clnt.storage
-	pollInterval := time.Duration(clnt.config.PollInterval) * time.Second
-	reportInterval := time.Duration(clnt.config.ReportInterval) * time.Second
-	rateLimit := clnt.config.RateLimit
+	poll := time.Duration(clnt.config.PollInterval) * time.Second
+	report := time.Duration(clnt.config.ReportInterval) * time.Second
+	rl := clnt.config.RateLimit
 
-	go runtimeCollector(ctx, store, pollInterval)
+	var wg sync.WaitGroup
 
-	go gopsutilCollector(ctx, store, pollInterval)
+	// collectors
+	wg.Add(1)
+	go func() { defer wg.Done(); runtimeCollector(ctx, store, poll) }()
+	wg.Add(1)
+	go func() { defer wg.Done(); gopsutilCollector(ctx, store, poll) }()
 
-	metricsChan := make(chan *model.Metric, rateLimit)
+	metricsCh := make(chan *model.Metric, rl)
 
-	go dispatchMetrics(ctx, store, metricsChan, reportInterval)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		dispatchMetrics(ctx, store, metricsCh, report)
+		close(metricsCh)
+	}()
 
-	for i := 0; i < rateLimit; i++ {
+	// workers
+	for i := 0; i < rl; i++ {
+		wg.Add(1)
 		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case m := <-metricsChan:
-					if err := clnt.sendMetricToServer(ctx, m); err != nil {
-						log.Printf("failed to send metric: %v", err)
-						continue
-					}
-					log.Println("Send success")
-				}
+			defer wg.Done()
+			for m := range metricsCh {
+				reqCtx, cancel := context.WithTimeout(context.Background(),
+					time.Duration(clnt.config.ClientTimeout)*time.Second)
+				_ = clnt.sendMetricToServer(reqCtx, m)
+				cancel()
 			}
 		}()
 	}
 
-	return nil
+	<-ctx.Done()
+	wg.Wait()
+	return context.Canceled
 }
 
 func runtimeCollector(ctx context.Context, store storage, interval time.Duration) {
-
-	collectAndSave(ctx, store, collector.CollectRuntimeMetrics, "runtime")
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
+	if interval <= 0 {
+		return
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-t.C:
 			collectAndSave(ctx, store, collector.CollectRuntimeMetrics, "runtime")
 		}
 	}
 }
 
 func gopsutilCollector(ctx context.Context, store storage, interval time.Duration) {
-
-	collectAndSave(ctx, store, collector.CollectGopsutilMetrics, "gopsutil")
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
+	if interval <= 0 {
+		return
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-t.C:
 			collectAndSave(ctx, store, collector.CollectGopsutilMetrics, "gopsutil")
 		}
 	}
 }
 
 func collectAndSave(ctx context.Context, store storage, collect func() []model.Metric, label string) {
+	if ctx.Err() != nil {
+		return
+	}
 	for _, m := range collect() {
-		if err := store.Save(ctx, &m); err != nil {
-			log.Printf("failed to save metric [%s][%s]: %v", label, m.ID, err)
+		if ctx.Err() != nil {
+			return
+		}
+		mm := m
+		if err := store.Save(ctx, &mm); err != nil {
+			log.Printf("failed to save metric [%s][%s]: %v", label, mm.ID, err)
+			if errors.Is(err, context.Canceled) {
+				return
+			}
 		}
 	}
 }
 
 func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
+	if interval <= 0 {
+		<-ctx.Done()
 
+		if metrics, err := store.GetAll(context.Background()); err == nil {
+			for _, m := range metrics {
+				ch <- m
+			}
+		}
+		return
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
 	for {
 		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
+		case <-t.C:
 			metrics, err := store.GetAll(ctx)
 			if err != nil {
-				log.Printf("failed to get metrics: %v", err)
+				log.Printf("get: %v", err)
 				continue
 			}
 			for _, m := range metrics {
-				select {
-				case ch <- m:
-				case <-ctx.Done():
-					return
+				ch <- m
+			} // без select с ctx
+		case <-ctx.Done():
+			if metrics, err := store.GetAll(context.Background()); err == nil {
+				for _, m := range metrics {
+					ch <- m
 				}
 			}
+			return
 		}
 	}
 }

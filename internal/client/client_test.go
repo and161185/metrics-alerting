@@ -189,7 +189,8 @@ func TestClientRun_StartsAndStops(t *testing.T) {
 	cfg := &config.ClientConfig{PollInterval: 1, ReportInterval: 1, RateLimit: 1, ClientTimeout: 1}
 	c, err := NewClient(st, cfg)
 	if err != nil {
-		t.Fatalf("client constructor errer: %v", err)
+		t.Fatalf("client constructor error: %v", err)
 	}
-	require.NoError(t, c.Run(ctx))
+	err = c.Run(ctx)
+	require.ErrorIs(t, err, context.Canceled)
 }

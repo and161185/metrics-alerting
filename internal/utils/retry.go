@@ -30,7 +30,12 @@ func isRetriable(err error) bool {
 	if err == nil {
 		return false
 	}
+	// не ретраим отмену/дедлайн
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
 
+	// PG-коды
 	retriableCodes := map[string]struct{}{
 		pgerrcode.ConnectionException:                           {},
 		pgerrcode.ConnectionDoesNotExist:                        {},
@@ -43,24 +48,19 @@ func isRetriable(err error) bool {
 	}
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {
-		if _, ok := retriableCodes[pgErr.Code]; ok {
-			return true
-		}
+		_, ok := retriableCodes[pgErr.Code]
+		return ok
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) {
+	// сетевые — ретраим
+	var nerr net.Error
+	if errors.As(err, &nerr) {
 		return true
 	}
 
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		return true
-	}
-
+	// прочие таймауты (например os.ErrDeadlineExceeded)
 	if os.IsTimeout(err) {
 		return true
 	}
-
 	return false
 }

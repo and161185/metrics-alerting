@@ -5,9 +5,13 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"net"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,4 +71,25 @@ func TestWithRetry_StopsOnContext(t *testing.T) {
 		return tempErr{}
 	})
 	require.Error(t, err)
+}
+
+func TestIsRetriable(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"canceled", context.Canceled, false},
+		{"deadline", context.DeadlineExceeded, false},
+		{"pg-conn-failure", &pgconn.PgError{Code: pgerrcode.ConnectionFailure}, true},
+		{"pg-unique", &pgconn.PgError{Code: pgerrcode.UniqueViolation}, false},
+		{"net-error", &net.DNSError{Err: "x"}, true},
+		{"os-deadline", os.ErrDeadlineExceeded, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, isRetriable(tc.err))
+		})
+	}
 }

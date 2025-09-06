@@ -640,3 +640,37 @@ func Test_PingHandler_OK_and_Error(t *testing.T) {
 		t.Fatalf("status=%d", rr2.Code)
 	}
 }
+
+func Test_GetMetricHandler_BadType(t *testing.T) {
+	s := newServerWithInMem(t)
+	h := buildRouter(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/value/type/x", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func Test_GetMetricHandler_NotFound_Plain(t *testing.T) {
+	s := newServerWithInMem(t)
+	h := buildRouter(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/value/gauge/absent", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func Test_GetMetricHandler_NilValue_Plain(t *testing.T) {
+	s := newServerWithInMem(t)
+	_ = s.Storage.Save(context.Background(), &model.Metric{ID: "g0", Type: model.Gauge}) // Value=nil
+	h := buildRouter(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/value/gauge/g0", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
+}
