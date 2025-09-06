@@ -1,0 +1,217 @@
+{
+  "Alloc": {
+    "id": "Alloc",
+    "type": "gauge",
+    "value": 1388288
+  },
+  "BuckHashSys": {
+    "id": "BuckHashSys",
+    "type": "gauge",
+    "value": 3363
+  },
+  "CPUutilization1": {
+    "id": "CPUutilization1",
+    "type": "gauge",
+    "value": 3.9215686275279085
+  },
+  "CPUutilization10": {
+    "id": "CPUutilization10",
+    "type": "gauge",
+    "value": 1.0101010101214252
+  },
+  "CPUutilization11": {
+    "id": "CPUutilization11",
+    "type": "gauge",
+    "value": 3.030303030191675
+  },
+  "CPUutilization12": {
+    "id": "CPUutilization12",
+    "type": "gauge",
+    "value": 1.010101010123281
+  },
+  "CPUutilization2": {
+    "id": "CPUutilization2",
+    "type": "gauge",
+    "value": 1.010101010123281
+  },
+  "CPUutilization3": {
+    "id": "CPUutilization3",
+    "type": "gauge",
+    "value": 2.020202020246562
+  },
+  "CPUutilization4": {
+    "id": "CPUutilization4",
+    "type": "gauge",
+    "value": 0
+  },
+  "CPUutilization5": {
+    "id": "CPUutilization5",
+    "type": "gauge",
+    "value": 2.0000000000400178
+  },
+  "CPUutilization6": {
+    "id": "CPUutilization6",
+    "type": "gauge",
+    "value": 3.9603960396824194
+  },
+  "CPUutilization7": {
+    "id": "CPUutilization7",
+    "type": "gauge",
+    "value": 2.9999999998835847
+  },
+  "CPUutilization8": {
+    "id": "CPUutilization8",
+    "type": "gauge",
+    "value": 1.9999999998653948
+  },
+  "CPUutilization9": {
+    "id": "CPUutilization9",
+    "type": "gauge",
+    "value": 3.0000000000600267
+  },
+  "FreeMemory": {
+    "id": "FreeMemory",
+    "type": "gauge",
+    "value": 6842773504
+  },
+  "Frees": {
+    "id": "Frees",
+    "type": "gauge",
+    "value": 28258
+  },
+  "GCCPUFraction": {
+    "id": "GCCPUFraction",
+    "type": "gauge",
+    "value": 0.0023269196786343876
+  },
+  "GCSys": {
+    "id": "GCSys",
+    "type": "gauge",
+    "value": 2372144
+  },
+  "HeapAlloc": {
+    "id": "HeapAlloc",
+    "type": "gauge",
+    "value": 1388288
+  },
+  "HeapIdle": {
+    "id": "HeapIdle",
+    "type": "gauge",
+    "value": 5300224
+  },
+  "HeapInuse": {
+    "id": "HeapInuse",
+    "type": "gauge",
+    "value": 2367488
+  },
+  "HeapObjects": {
+    "id": "HeapObjects",
+    "type": "gauge",
+    "value": 1417
+  },
+  "HeapReleased": {
+    "id": "HeapReleased",
+    "type": "gauge",
+    "value": 2875392
+  },
+  "HeapSys": {
+    "id": "HeapSys",
+    "type": "gauge",
+    "value": 7667712
+  },
+  "LastGC": {
+    "id": "LastGC",
+    "type": "gauge",
+    "value": 1757157789617757000
+  },
+  "Lookups": {
+    "id": "Lookups",
+    "type": "gauge",
+    "value": 0
+  },
+  "MCacheInuse": {
+    "id": "MCacheInuse",
+    "type": "gauge",
+    "value": 14496
+  },
+  "MCacheSys": {
+    "id": "MCacheSys",
+    "type": "gauge",
+    "value": 15704
+  },
+  "MSpanInuse": {
+    "id": "MSpanInuse",
+    "type": "gauge",
+    "value": 120480
+  },
+  "MSpanSys": {
+    "id": "MSpanSys",
+    "type": "gauge",
+    "value": 130560
+  },
+  "Mallocs": {
+    "id": "Mallocs",
+    "type": "gauge",
+    "value": 29675
+  },
+  "NextGC": {
+    "id": "NextGC",
+    "type": "gauge",
+    "value": 4194304
+  },
+  "NumForcedGC": {
+    "id": "NumForcedGC",
+    "type": "gauge",
+    "value": 0
+  },
+  "NumGC": {
+    "id": "NumGC",
+    "type": "gauge",
+    "value": 84
+  },
+  "OtherSys": {
+    "id": "OtherSys",
+    "type": "gauge",
+    "value": 1368421
+  },
+  "PauseTotalNs": {
+    "id": "PauseTotalNs",
+    "type": "gauge",
+    "value": 22778090
+  },
+  "PollCount": {
+    "id": "PollCount",
+    "type": "counter",
+    "delta": 203
+  },
+  "RandomValue": {
+    "id": "RandomValue",
+    "type": "gauge",
+    "value": 0.899924469429883
+  },
+  "StackInuse": {
+    "id": "StackInuse",
+    "type": "gauge",
+    "value": 720896
+  },
+  "StackSys": {
+    "id": "StackSys",
+    "type": "gauge",
+    "value": 720896
+  },
+  "Sys": {
+    "id": "Sys",
+    "type": "gauge",
+    "value": 12278800
+  },
+  "TotalAlloc": {
+    "id": "TotalAlloc",
+    "type": "gauge",
+    "value": 192701304
+  },
+  "TotalMemory": {
+    "id": "TotalMemory",
+    "type": "gauge",
+    "value": 8238874624
+  }
+}
