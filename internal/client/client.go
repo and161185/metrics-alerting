@@ -39,7 +39,7 @@ func NewClient(storage storage, config *config.ClientConfig) (*Client, error) {
 
 	hc := &http.Client{Timeout: time.Duration(config.ClientTimeout) * time.Second}
 
-	var rt http.RoundTripper = http.DefaultTransport
+	rt := http.DefaultTransport
 	if config.CryptoKeyPath != "" {
 		pub, err := crypto.LoadPublicKey(config.CryptoKeyPath)
 		if err != nil {

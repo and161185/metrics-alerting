@@ -124,7 +124,12 @@ func TestDecryptMiddleware_BadEnvelope(t *testing.T) {
 
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/", bytes.NewReader([]byte(`{"v":1,"alg":"X","enc":"Y"}`)))
 	req.Header.Set("X-Encrypted", "v1")
-	resp, _ := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do: %v", err)
+	}
+	defer resp.Body.Close() // ← добавить
+
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("want 400, got %d", resp.StatusCode)
 	}

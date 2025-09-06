@@ -218,17 +218,14 @@ func TestLoadPrivateKeyFromBytes_BadDER(t *testing.T) {
 	}
 }
 
-func TestLoadPrivateKeyFromBytes_EncryptedPEM(t *testing.T) {
-	// create encrypted PEM-block; parser should fail (decryprion is unsupported)
-	priv, _ := genRSA(t)
-	enc, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY",
-		x509.MarshalPKCS1PrivateKey(priv), []byte("pass123"), x509.PEMCipherAES256)
-	if err != nil {
-		t.Fatalf("encrypt pem: %v", err)
-	}
-	p := pem.EncodeToMemory(enc)
-	if _, err := LoadPrivateKeyFromBytes(p); err == nil {
-		t.Fatalf("expected parse error on encrypted PEM")
+func TestLoadPrivateKeyFromBytes_EncryptedPEM_Unsupported(t *testing.T) {
+	// имитируем зашифрованный PKCS#8: тип "ENCRYPTED PRIVATE KEY"
+	block := &pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: []byte{0x01, 0x02}}
+	p := pem.EncodeToMemory(block)
+
+	_, err := LoadPrivateKeyFromBytes(p)
+	if err == nil || err != ErrUnsupportedPEM {
+		t.Fatalf("want ErrUnsupportedPEM, got %v", err)
 	}
 }
 
