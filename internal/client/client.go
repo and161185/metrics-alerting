@@ -35,25 +35,32 @@ type Client struct {
 }
 
 // NewClient creates a new client instance with the given storage and configuration.
-func NewClient(storage storage, config *config.ClientConfig) (*Client, error) {
+func NewClient(s storage, cfg *config.ClientConfig) (*Client, error) {
+	hc, err := NewHTTPClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return NewClientWithHTTP(s, cfg, hc), nil
+}
 
-	hc := &http.Client{Timeout: time.Duration(config.ClientTimeout) * time.Second}
+// DI: ready http.Client
+func NewClientWithHTTP(s storage, cfg *config.ClientConfig, hc *http.Client) *Client {
+	return &Client{storage: s, config: cfg, httpClient: hc}
+}
 
+// fabric http-client
+func NewHTTPClient(cfg *config.ClientConfig) (*http.Client, error) {
+	hc := &http.Client{Timeout: time.Duration(cfg.ClientTimeout) * time.Second}
 	rt := http.DefaultTransport
-	if config.CryptoKeyPath != "" {
-		pub, err := crypto.LoadPublicKey(config.CryptoKeyPath)
+	if cfg.CryptoKeyPath != "" {
+		pub, err := crypto.LoadPublicKey(cfg.CryptoKeyPath)
 		if err != nil {
 			return nil, fmt.Errorf("load public key: %w", err)
 		}
-		rt = &transport.EncryptRoundTripper{Base: http.DefaultTransport, PubKey: pub}
+		rt = &transport.EncryptRoundTripper{Base: rt, PubKey: pub}
 	}
-
 	hc.Transport = rt
-	return &Client{
-		storage:    storage,
-		config:     config,
-		httpClient: hc,
-	}, nil
+	return hc, nil
 }
 
 // Run starts collecting metrics and sending them to the server in the background.

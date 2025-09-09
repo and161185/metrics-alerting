@@ -80,56 +80,95 @@ func (srv *Server) buildRouter() http.Handler {
 
 // Run starts the HTTP server and, if configured, periodically saves metrics to a file.
 func (srv *Server) Run(ctx context.Context) error {
-	router := srv.buildRouter()
-	httpSrv := &http.Server{Addr: srv.Config.Addr, Handler: router}
+	httpSrv := srv.buildHTTPServer()
 
-	// Restore from file (count load)
+	srv.restoreFromFile(ctx)
+
+	stopAutosave := srv.startAutosave(ctx)
+	defer stopAutosave()
+	defer srv.finalFlush()
+	defer srv.closeStorage()
+
+	errCh := srv.startHTTP(httpSrv)
+
+	select {
+	case <-ctx.Done():
+		_ = srv.shutdownHTTP(httpSrv, 5*time.Second)
+		return nil
+	case err := <-errCh:
+		_ = srv.shutdownHTTP(httpSrv, 5*time.Second)
+		return fmt.Errorf("server error: %w", err)
+	}
+}
+
+// buildHTTPServer creates and configures the HTTP server with the router.
+func (srv *Server) buildHTTPServer() *http.Server {
+	return &http.Server{Addr: srv.Config.Addr, Handler: srv.buildRouter()}
+}
+
+// restoreFromFile loads metrics from the file storage if Restore mode is enabled.
+func (srv *Server) restoreFromFile(ctx context.Context) {
 	if srv.Config.Restore && srv.FileStore != nil && srv.Config.FileStoragePath != "" {
 		if err := srv.FileStore.LoadFromFile(context.Background(), srv.Config.FileStoragePath); err != nil {
-			srv.Config.Logger.Warnf("failed to restore metrics from file: %v", err)
+			srv.Config.Logger.Warnf("restore: %v", err)
 		}
 	}
+}
 
-	// autosave ticker (respect ctx)
-	var ticker *time.Ticker
-	if srv.Config.StoreInterval > 0 && srv.FileStore != nil {
-		ticker = time.NewTicker(time.Duration(srv.Config.StoreInterval) * time.Second)
-		go func() {
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					_ = srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath)
-				}
-			}
-		}()
+// startAutosave launches a background goroutine that periodically saves metrics to a file.
+// Returns a function to stop the autosave when the server is shutting down.
+func (srv *Server) startAutosave(ctx context.Context) (stop func()) {
+	if srv.Config.StoreInterval <= 0 || srv.FileStore == nil {
+		return func() {}
 	}
-
+	t := time.NewTicker(time.Duration(srv.Config.StoreInterval) * time.Second)
+	done := make(chan struct{})
 	go func() {
-		if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			srv.Config.Logger.Fatalf("server error: %v", err)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				close(done)
+				return
+			case <-t.C:
+				_ = srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath)
+			}
 		}
 	}()
+	return func() { <-done }
+}
 
-	<-ctx.Done()
+// startHTTP runs the HTTP server in a separate goroutine and returns a channel
+// that will contain an error if ListenAndServe fails.
+func (srv *Server) startHTTP(s *http.Server) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+	}()
+	return errCh
+}
 
-	if ticker != nil {
-		ticker.Stop()
-	}
-
-	sdCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// shutdownHTTP gracefully shuts down the HTTP server with the given timeout.
+func (srv *Server) shutdownHTTP(s *http.Server, timeout time.Duration) error {
+	sdCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	_ = httpSrv.Shutdown(sdCtx)
+	return s.Shutdown(sdCtx)
+}
 
-	if srv.Config.FileStoragePath != "" && srv.FileStore != nil {
+// finalFlush ensures all pending metrics are written to file storage before exit.
+func (srv *Server) finalFlush() {
+	if srv.FileStore != nil && srv.Config.FileStoragePath != "" {
 		_ = srv.FileStore.SaveToFile(context.Background(), srv.Config.FileStoragePath)
 	}
-	if closer, ok := srv.Storage.(interface{ Close(context.Context) error }); ok {
-		_ = closer.Close(context.Background())
+}
+
+// closeStorage closes the underlying storage if it implements the Close method.
+func (srv *Server) closeStorage() {
+	if c, ok := srv.Storage.(interface{ Close(context.Context) error }); ok {
+		_ = c.Close(context.Background())
 	}
-	return nil
 }
 
 // UpdateMetricHandler handles updating a metric via URL parameters.
