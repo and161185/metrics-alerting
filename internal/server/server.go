@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,25 +42,28 @@ type fileBackedStore interface {
 
 // Server serves the metrics HTTP API.
 type Server struct {
-	Storage   Storage
-	Config    *config.ServerConfig
-	FileStore fileBackedStore
+	Storage    Storage
+	Config     *config.ServerConfig
+	FileStore  fileBackedStore
+	PrivateKey *rsa.PrivateKey
 }
 
 // NewServer creates a new server instance with the given storage and configuration.
-func NewServer(storage Storage, config *config.ServerConfig) *Server {
+func NewServer(storage Storage, config *config.ServerConfig, priv *rsa.PrivateKey) *Server {
 	fileStore, _ := storage.(fileBackedStore)
 
 	return &Server{
-		Storage:   storage,
-		Config:    config,
-		FileStore: fileStore,
+		Storage:    storage,
+		Config:     config,
+		FileStore:  fileStore,
+		PrivateKey: priv,
 	}
 }
 
 func (srv *Server) buildRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.StripSlashes)
+	router.Use(middleware.DecryptMiddleware(srv.PrivateKey, false))
 	router.Use(middleware.LogMiddleware(srv.Config.Logger))
 	router.Use(middleware.VerifyHashMiddleware(srv.Config))
 	router.Use(middleware.DecompressMiddleware)
@@ -76,47 +80,95 @@ func (srv *Server) buildRouter() http.Handler {
 
 // Run starts the HTTP server and, if configured, periodically saves metrics to a file.
 func (srv *Server) Run(ctx context.Context) error {
-	router := srv.buildRouter()
+	httpSrv := srv.buildHTTPServer()
 
-	server := &http.Server{
-		Addr:    srv.Config.Addr,
-		Handler: router,
+	srv.restoreFromFile(ctx)
+
+	stopAutosave := srv.startAutosave(ctx)
+	defer stopAutosave()
+	defer srv.finalFlush()
+	defer srv.closeStorage()
+
+	errCh := srv.startHTTP(httpSrv)
+
+	select {
+	case <-ctx.Done():
+		_ = srv.shutdownHTTP(httpSrv, 5*time.Second)
+		return nil
+	case err := <-errCh:
+		_ = srv.shutdownHTTP(httpSrv, 5*time.Second)
+		return fmt.Errorf("server error: %w", err)
 	}
+}
 
-	if srv.Config.Restore && srv.FileStore != nil {
-		if err := srv.FileStore.LoadFromFile(ctx, srv.Config.FileStoragePath); err != nil {
-			srv.Config.Logger.Warnf("failed to restore metrics from file: %v", err)
+// buildHTTPServer creates and configures the HTTP server with the router.
+func (srv *Server) buildHTTPServer() *http.Server {
+	return &http.Server{Addr: srv.Config.Addr, Handler: srv.buildRouter()}
+}
+
+// restoreFromFile loads metrics from the file storage if Restore mode is enabled.
+func (srv *Server) restoreFromFile(ctx context.Context) {
+	if srv.Config.Restore && srv.FileStore != nil && srv.Config.FileStoragePath != "" {
+		if err := srv.FileStore.LoadFromFile(context.Background(), srv.Config.FileStoragePath); err != nil {
+			srv.Config.Logger.Warnf("restore: %v", err)
 		}
 	}
+}
 
+// startAutosave launches a background goroutine that periodically saves metrics to a file.
+// Returns a function to stop the autosave when the server is shutting down.
+func (srv *Server) startAutosave(ctx context.Context) (stop func()) {
+	if srv.Config.StoreInterval <= 0 || srv.FileStore == nil {
+		return func() {}
+	}
+	t := time.NewTicker(time.Duration(srv.Config.StoreInterval) * time.Second)
+	done := make(chan struct{})
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			srv.Config.Logger.Fatalf("server error: %v", err)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				close(done)
+				return
+			case <-t.C:
+				_ = srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath)
+			}
 		}
 	}()
+	return func() { <-done }
+}
 
-	if srv.Config.StoreInterval > 0 && srv.FileStore != nil {
-		ticker := time.NewTicker(time.Duration(srv.Config.StoreInterval) * time.Second)
-		go func() {
-			for range ticker.C {
-				if err := srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath); err != nil {
-					srv.Config.Logger.Errorf("auto-save failed: %v", err)
-				}
-			}
-		}()
-	}
-
-	<-ctx.Done()
-
-	if srv.Config.FileStoragePath != "" && srv.FileStore != nil {
-		if err := srv.FileStore.SaveToFile(ctx, srv.Config.FileStoragePath); err != nil {
-			log.Printf("save failed: %v", err)
+// startHTTP runs the HTTP server in a separate goroutine and returns a channel
+// that will contain an error if ListenAndServe fails.
+func (srv *Server) startHTTP(s *http.Server) <-chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		if err := s.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			errCh <- err
 		}
-	}
+	}()
+	return errCh
+}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// shutdownHTTP gracefully shuts down the HTTP server with the given timeout.
+func (srv *Server) shutdownHTTP(s *http.Server, timeout time.Duration) error {
+	sdCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return server.Shutdown(shutdownCtx)
+	return s.Shutdown(sdCtx)
+}
+
+// finalFlush ensures all pending metrics are written to file storage before exit.
+func (srv *Server) finalFlush() {
+	if srv.FileStore != nil && srv.Config.FileStoragePath != "" {
+		_ = srv.FileStore.SaveToFile(context.Background(), srv.Config.FileStoragePath)
+	}
+}
+
+// closeStorage closes the underlying storage if it implements the Close method.
+func (srv *Server) closeStorage() {
+	if c, ok := srv.Storage.(interface{ Close(context.Context) error }); ok {
+		_ = c.Close(context.Background())
+	}
 }
 
 // UpdateMetricHandler handles updating a metric via URL parameters.

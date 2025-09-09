@@ -254,7 +254,7 @@ func (s *stubStore) Ping(ctx context.Context) error { return s.err }
 
 func TestNewServer_BuildRouter(t *testing.T) {
 	cfg := &config.ServerConfig{Addr: "127.0.0.1:0"}
-	s := srv.NewServer(&stubStore{}, cfg)
+	s := srv.NewServer(&stubStore{}, cfg, nil)
 	require.NotNil(t, s)
 	h := getRouterForTest(s)
 	rr := httptest.NewRecorder()
@@ -271,7 +271,7 @@ func TestRun_StartStop(t *testing.T) {
 		Restore:         true,
 	}
 	st := &stubStore{data: map[string]*model.Metric{}}
-	s := srv.NewServer(st, cfg)
+	s := srv.NewServer(st, cfg, nil)
 
 	fs := &memFS{}
 	s.FileStore = fs
@@ -287,7 +287,7 @@ func TestRun_StartStop(t *testing.T) {
 
 func TestUpdateMetricHandlerJSON_Happy(t *testing.T) {
 	cfg := &config.ServerConfig{Addr: "x"}
-	s := srv.NewServer(&stubStore{data: map[string]*model.Metric{}}, cfg)
+	s := srv.NewServer(&stubStore{data: map[string]*model.Metric{}}, cfg, nil)
 
 	r := chi.NewRouter()
 	r.Post("/update", s.UpdateMetricHandlerJSON)
@@ -306,7 +306,7 @@ func TestUpdateMetricHandlerJSON_Happy(t *testing.T) {
 func TestUpdateArrayMetricHandlerJSON_Happy(t *testing.T) {
 	cfg := &config.ServerConfig{Addr: "x"}
 	st := &stubStore{data: map[string]*model.Metric{}}
-	s := srv.NewServer(st, cfg)
+	s := srv.NewServer(st, cfg, nil)
 
 	r := chi.NewRouter()
 	r.Post("/updates", s.UpdateArrayMetricHandlerJSON)
@@ -331,7 +331,7 @@ func TestGetMetricHandler_Counter(t *testing.T) {
 	st := &stubStore{data: map[string]*model.Metric{
 		"c": {ID: "c", Type: model.Counter, Delta: utils.I64Ptr(9)},
 	}}
-	s := srv.NewServer(st, cfg)
+	s := srv.NewServer(st, cfg, nil)
 
 	r := chi.NewRouter()
 	r.Get("/value/{type}/{name}", s.GetMetricHandler)
@@ -639,4 +639,38 @@ func Test_PingHandler_OK_and_Error(t *testing.T) {
 	if rr2.Code != http.StatusInternalServerError {
 		t.Fatalf("status=%d", rr2.Code)
 	}
+}
+
+func Test_GetMetricHandler_BadType(t *testing.T) {
+	s := newServerWithInMem(t)
+	h := buildRouter(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/value/type/x", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func Test_GetMetricHandler_NotFound_Plain(t *testing.T) {
+	s := newServerWithInMem(t)
+	h := buildRouter(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/value/gauge/absent", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func Test_GetMetricHandler_NilValue_Plain(t *testing.T) {
+	s := newServerWithInMem(t)
+	_ = s.Storage.Save(context.Background(), &model.Metric{ID: "g0", Type: model.Gauge}) // Value=nil
+	h := buildRouter(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/value/gauge/g0", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusNotFound, rr.Code)
 }
