@@ -64,6 +64,7 @@ func (srv *Server) buildRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Use(chiMiddleware.StripSlashes)
 	router.Use(middleware.DecryptMiddleware(srv.PrivateKey, false))
+	router.Use(middleware.TrustedCIDR(srv.Config.TrustedSubnet))
 	router.Use(middleware.LogMiddleware(srv.Config.Logger))
 	router.Use(middleware.VerifyHashMiddleware(srv.Config))
 	router.Use(middleware.DecompressMiddleware)

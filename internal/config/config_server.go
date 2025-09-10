@@ -20,6 +20,7 @@ type ServerConfig struct {
 	DatabaseDsn     string // Data Source Name for PostgreSQL
 	Key             string // Key for hash verification
 	CryptoKeyPath   string // Path to private key
+	TrustedSubnet   string // CIDR, ex. "192.168.1.0/24"
 }
 
 // NewServerConfig creates and returns a new ServerConfig by parsing flags and environment variables.
@@ -49,6 +50,7 @@ func NewServerConfig() *ServerConfig {
 	var fKey strFlag
 	var fCrypto strFlag
 	var fConf strFlag // -c / -config
+	var fTrustedSubnet strFlag
 
 	flag.Var(&fAddr, "a", "HTTP server address")
 	flag.Var(&fStoreI, "i", "store interval (seconds)")
@@ -59,6 +61,7 @@ func NewServerConfig() *ServerConfig {
 	flag.Var(&fCrypto, "crypto-key", "Path to private key")
 	flag.Var(&fConf, "c", "Path to JSON config file")
 	flag.Var(&fConf, "config", "Path to JSON config file (alias)")
+	flag.Var(&fTrustedSubnet, "t", "trusted subnet")
 	flag.Parse()
 
 	cfg.Addr = fAddr.v
@@ -68,6 +71,7 @@ func NewServerConfig() *ServerConfig {
 	cfg.DatabaseDsn = fDSN.v
 	cfg.Key = fKey.v
 	cfg.CryptoKeyPath = fCrypto.v
+	cfg.TrustedSubnet = fTrustedSubnet.v
 
 	// 3) JSON (lowest priority)
 	if fConf.v == "" {
@@ -97,6 +101,9 @@ func NewServerConfig() *ServerConfig {
 			}
 			if js.CryptoKey != nil && !fCrypto.set {
 				cfg.CryptoKeyPath = *js.CryptoKey
+			}
+			if js.TrustedSubnet != nil && !fTrustedSubnet.set {
+				cfg.TrustedSubnet = *js.TrustedSubnet
 			}
 		}
 	}
@@ -148,5 +155,9 @@ func readServerEnvironment(cfg *ServerConfig) {
 
 	if cryptokey := os.Getenv("CRYPTO_KEY"); cryptokey != "" {
 		cfg.CryptoKeyPath = cryptokey
+	}
+
+	if trustedSubnet := os.Getenv("TRUSTED_SUBNET"); trustedSubnet != "" {
+		cfg.TrustedSubnet = trustedSubnet
 	}
 }

@@ -1,8 +1,10 @@
 package client
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -193,4 +195,114 @@ func TestClientRun_StartsAndStops(t *testing.T) {
 	}
 	err = c.Run(ctx)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestPostGzipJSON_SetsHeadersAndBody_OK(t *testing.T) {
+	var gotRealIP, gotEnc, gotHash string
+	var gotGzBody []byte
+	const key = "secret123"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRealIP = r.Header.Get("X-Real-IP")
+		gotEnc = r.Header.Get("Content-Encoding")
+		gotHash = r.Header.Get("HashSHA256")
+		b, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		gotGzBody = append([]byte(nil), b...)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	st := inmemory.NewMemStorage(ctx)
+	cfg := &config.ClientConfig{
+		ServerAddr:     srv.URL,
+		Key:            key,
+		PollInterval:   1,
+		ReportInterval: 1,
+		RateLimit:      1,
+		ClientTimeout:  1,
+	}
+	c, err := NewClient(st, cfg)
+	if err != nil {
+		t.Fatalf("client constructor error: %v", err)
+	}
+	c.httpClient = srv.Client()
+	c.realIP = "10.1.2.3"
+
+	reqCtx, cancelReq := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancelReq()
+
+	payload := map[string]any{"k": "v", "n": 123}
+	code, err := c.postGzipJSON(reqCtx, "/update/", payload)
+	if err != nil {
+		t.Fatalf("postGzipJSON error: %v", err)
+	}
+	if code != http.StatusOK {
+		t.Fatalf("want 200, got %d", code)
+	}
+
+	if gotRealIP != "10.1.2.3" {
+		t.Fatalf("X-Real-IP mismatch: %q", gotRealIP)
+	}
+	if gotEnc != "gzip" {
+		t.Fatalf("Content-Encoding mismatch: %q", gotEnc)
+	}
+	if gotHash != utils.CalculateHash(gotGzBody, key) {
+		t.Fatalf("HashSHA256 mismatch: got %q", gotHash)
+	}
+
+	zr, err := gzip.NewReader(bytes.NewReader(gotGzBody))
+	if err != nil {
+		t.Fatalf("gzip.NewReader: %v", err)
+	}
+	defer zr.Close()
+	raw, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatalf("read gunzip: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got["k"] != "v" || int(got["n"].(float64)) != 123 {
+		t.Fatalf("payload mismatch: %+v", got)
+	}
+}
+
+func TestPostGzipJSON_UnexpectedStatus_Propagates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer srv.Close()
+
+	ctx := context.Background()
+	st := inmemory.NewMemStorage(ctx)
+	cfg := &config.ClientConfig{
+		ServerAddr:     srv.URL,
+		PollInterval:   1,
+		ReportInterval: 1,
+		RateLimit:      1,
+		ClientTimeout:  1,
+	}
+
+	c, err := NewClient(st, cfg)
+	if err != nil {
+		t.Fatalf("client constructor error: %v", err)
+	}
+	c.httpClient = srv.Client()
+	c.realIP = "10.0.0.5"
+
+	reqCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	code, err := c.postGzipJSON(reqCtx, "/update/", map[string]string{"a": "b"})
+	if err != nil {
+		t.Fatalf("postGzipJSON error: %v", err)
+	}
+	if code != http.StatusForbidden {
+		t.Fatalf("want 403, got %d", code)
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -32,6 +33,7 @@ type Client struct {
 	storage    storage
 	config     *config.ClientConfig
 	httpClient *http.Client
+	realIP     string
 }
 
 // NewClient creates a new client instance with the given storage and configuration.
@@ -43,9 +45,21 @@ func NewClient(s storage, cfg *config.ClientConfig) (*Client, error) {
 	return NewClientWithHTTP(s, cfg, hc), nil
 }
 
+func detectOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	if la, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+		return la.IP.String()
+	}
+	return ""
+}
+
 // DI: ready http.Client
 func NewClientWithHTTP(s storage, cfg *config.ClientConfig, hc *http.Client) *Client {
-	return &Client{storage: s, config: cfg, httpClient: hc}
+	return &Client{storage: s, config: cfg, httpClient: hc, realIP: detectOutboundIP()}
 }
 
 // fabric http-client
@@ -191,76 +205,66 @@ func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric
 	}
 }
 
-func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) error {
-	serverAddr := clnt.config.ServerAddr
-	httpClient := clnt.httpClient
-
-	bodyRaw, err := json.Marshal(m)
+func (clnt *Client) postGzipJSON(ctx context.Context, path string, payload any) (int, error) {
+	raw, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return 0, fmt.Errorf("marshal: %w", err)
 	}
 
 	var body bytes.Buffer
 	zw := gzip.NewWriter(&body)
-	if _, err = zw.Write(bodyRaw); err != nil {
-		return fmt.Errorf("gzip write: %w", err)
+	if _, err = zw.Write(raw); err != nil {
+		return 0, fmt.Errorf("gzip write: %w", err)
 	}
 	if err = zw.Close(); err != nil {
-		return fmt.Errorf("gzip close: %w", err)
+		return 0, fmt.Errorf("gzip close: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/update/", serverAddr)
-	req, err := http.NewRequest(http.MethodPost, url, &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, clnt.config.ServerAddr+path, &body)
 	if err != nil {
-		return fmt.Errorf("new request: %w", err)
+		return 0, fmt.Errorf("new request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
-
+	if clnt.realIP != "" {
+		req.Header.Set("X-Real-IP", clnt.realIP)
+	}
 	if clnt.config.Key != "" {
 		req.Header.Set("HashSHA256", utils.CalculateHash(body.Bytes(), clnt.config.Key))
 	}
 
-	var statusCode int
+	var code int
 	err = utils.WithRetry(ctx, func() error {
-		resp, reqErr := httpClient.Do(req)
-		if reqErr != nil {
-			return reqErr
+		resp, e := clnt.httpClient.Do(req)
+		if e != nil {
+			return e
 		}
 		defer resp.Body.Close()
-
-		_, err = io.Copy(io.Discard, resp.Body)
-		if err != nil {
-			return err
-		}
-
-		statusCode = resp.StatusCode
+		_, _ = io.Copy(io.Discard, resp.Body)
+		code = resp.StatusCode
 		return nil
 	})
-
 	if err != nil {
-		return fmt.Errorf("send request: %w", err)
+		return 0, fmt.Errorf("send request: %w", err)
 	}
+	return code, nil
+}
 
-	if statusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", statusCode)
+func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) error {
+	code, err := clnt.postGzipJSON(ctx, "/update/", m)
+	if err != nil {
+		return err
 	}
-
+	if code != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", code)
+	}
 	return nil
 }
 
 func (clnt *Client) sendToServer(ctx context.Context) error {
-	store := clnt.storage
-	serverAddr := clnt.config.ServerAddr
-	httpClient := clnt.httpClient
-
-	all, err := store.GetAll(ctx)
-	if err != nil {
-		return fmt.Errorf("internal error: %w", err)
-	}
-
-	if len(all) == 0 {
-		return nil
+	all, err := clnt.storage.GetAll(ctx)
+	if err != nil || len(all) == 0 {
+		return err
 	}
 
 	metrics := make([]model.Metric, 0, len(all))
@@ -268,56 +272,12 @@ func (clnt *Client) sendToServer(ctx context.Context) error {
 		metrics = append(metrics, *m)
 	}
 
-	bodyRaw, err := json.Marshal(metrics)
+	code, err := clnt.postGzipJSON(ctx, "/updates/", metrics)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return err
 	}
-
-	var body bytes.Buffer
-	zw := gzip.NewWriter(&body)
-	if _, err = zw.Write(bodyRaw); err != nil {
-		return fmt.Errorf("gzip write: %w", err)
+	if code != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", code)
 	}
-	if err = zw.Close(); err != nil {
-		return fmt.Errorf("gzip close: %w", err)
-	}
-
-	url := fmt.Sprintf("%s/updates/", serverAddr)
-	req, err := http.NewRequest(http.MethodPost, url, &body)
-	if err != nil {
-		return fmt.Errorf("new request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
-
-	if clnt.config.Key != "" {
-		req.Header.Set("HashSHA256", utils.CalculateHash(body.Bytes(), clnt.config.Key))
-	}
-
-	var statusCode int
-	err = utils.WithRetry(ctx, func() error {
-		resp, reqErr := httpClient.Do(req)
-		if reqErr != nil {
-			return reqErr
-		}
-		defer resp.Body.Close()
-
-		_, err = io.Copy(io.Discard, resp.Body)
-		if err != nil {
-			return err
-		}
-
-		statusCode = resp.StatusCode
-		return nil
-	})
-
-	if err != nil {
-		return fmt.Errorf("send request: %w", err)
-	}
-
-	if statusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", statusCode)
-	}
-
 	return nil
 }
