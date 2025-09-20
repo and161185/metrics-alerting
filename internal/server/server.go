@@ -14,6 +14,7 @@ import (
 	"github.com/and161185/metrics-alerting/cmd/server/metrics"
 	"github.com/and161185/metrics-alerting/internal/config"
 	"github.com/and161185/metrics-alerting/internal/errs"
+	"github.com/and161185/metrics-alerting/internal/grpcsvc"
 	"github.com/and161185/metrics-alerting/internal/server/middleware"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
@@ -90,15 +91,28 @@ func (srv *Server) Run(ctx context.Context) error {
 	defer srv.finalFlush()
 	defer srv.closeStorage()
 
-	errCh := srv.startHTTP(httpSrv)
+	// --- стартуем HTTP
+	httpErrCh := srv.startHTTP(httpSrv)
 
+	// --- gRPC (по флагу)
+	var grpcErrCh <-chan error
+	var stopGRPC = func() {}
+	if srv.Config.GRPCEnable {
+		grpcErrCh, stopGRPC = srv.StartGRPC(ctx)
+	}
+	defer stopGRPC()
+
+	// --- конкурентное ожидание
 	select {
 	case <-ctx.Done():
 		_ = srv.shutdownHTTP(httpSrv, 5*time.Second)
 		return nil
-	case err := <-errCh:
+	case err := <-httpErrCh:
 		_ = srv.shutdownHTTP(httpSrv, 5*time.Second)
-		return fmt.Errorf("server error: %w", err)
+		return fmt.Errorf("http server error: %w", err)
+	case err := <-grpcErrCh:
+		_ = srv.shutdownHTTP(httpSrv, 5*time.Second)
+		return fmt.Errorf("grpc server error: %w", err)
 	}
 }
 
@@ -460,4 +474,97 @@ func (srv *Server) PingHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+type storageAdapter struct{ s Storage }
+
+func (a storageAdapter) Ping(ctx context.Context) error { return a.s.Ping(ctx) }
+
+func (a storageAdapter) UpdateGauge(ctx context.Context, id string, value float64) error {
+	m := &model.Metric{ID: id, Type: model.Gauge, Value: &value}
+	return a.s.Save(ctx, m)
+}
+
+func (a storageAdapter) UpdateCounter(ctx context.Context, id string, delta int64) error {
+	d := delta
+	m := &model.Metric{ID: id, Type: model.Counter, Delta: &d}
+	return a.s.Save(ctx, m)
+}
+
+func (a storageAdapter) GetGauge(ctx context.Context, id string) (float64, bool, error) {
+	m := &model.Metric{ID: id, Type: model.Gauge}
+	got, err := a.s.Get(ctx, m)
+	if err != nil {
+		return 0, false, err
+	}
+	if got == nil || got.Value == nil {
+		return 0, false, nil
+	}
+	return *got.Value, true, nil
+}
+
+func (a storageAdapter) GetCounter(ctx context.Context, id string) (int64, bool, error) {
+	m := &model.Metric{ID: id, Type: model.Counter}
+	got, err := a.s.Get(ctx, m)
+	if err != nil {
+		return 0, false, err
+	}
+	if got == nil || got.Delta == nil {
+		return 0, false, nil
+	}
+	return *got.Delta, true, nil
+}
+
+func (a storageAdapter) GetAll(ctx context.Context) (map[string]float64, map[string]int64, error) {
+	all, err := a.s.GetAll(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	gs := make(map[string]float64, len(all))
+	cs := make(map[string]int64, len(all))
+	for id, m := range all {
+		switch m.Type {
+		case model.Gauge:
+			if m.Value != nil {
+				gs[id] = *m.Value
+			}
+		case model.Counter:
+			if m.Delta != nil {
+				cs[id] = *m.Delta
+			}
+		}
+	}
+	return gs, cs, nil
+}
+
+// startGRPC поднимает gRPC и возвращает канал ошибок и стоппер.
+func (srv *Server) StartGRPC(ctx context.Context) (<-chan error, func()) {
+	cfg := srv.Config
+	opts := grpcsvc.Opts{
+		Addr:       cfg.GRPCAddr,
+		MaxRecvMsg: cfg.GRPCMaxRecvMsg,
+		MaxSendMsg: cfg.GRPCMaxSendMsg,
+		TLS:        cfg.GRPCTLS,
+		CertFile:   cfg.GRPCCert,
+		KeyFile:    cfg.GRPCKey,
+		Logger:     cfg.Logger,
+		Storage:    storageAdapter{s: srv.Storage},
+	}
+	g, err := grpcsvc.New(opts)
+	if err != nil {
+		ch := make(chan error, 1)
+		ch <- fmt.Errorf("grpc init: %w", err)
+		close(ch)
+		return ch, func() {}
+	}
+
+	g.Start()
+
+	stop := func() {
+		shCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		g.Stop(shCtx)
+	}
+
+	return g.Err(), stop
 }

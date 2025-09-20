@@ -15,6 +15,14 @@ type serverJSON struct {
 	DatabaseDSN   *string `json:"database_dsn"`
 	CryptoKey     *string `json:"crypto_key"`
 	TrustedSubnet *string `json:"trusted_subnet"`
+
+	GRPC           *bool   `json:"grpc"`
+	GRPCAddr       *string `json:"grpc_addr"`
+	GRPCTLS        *bool   `json:"grpc_tls"`
+	GRPCCert       *string `json:"grpc_cert"`
+	GRPCKey        *string `json:"grpc_key"`
+	GRPCMaxRecvMsg *int    `json:"grpc_max_recv"`
+	GRPCMaxSendMsg *int    `json:"grpc_max_send"`
 }
 
 type clientJSON struct {
@@ -22,6 +30,12 @@ type clientJSON struct {
 	ReportInterval *string `json:"report_interval"`
 	PollInterval   *string `json:"poll_interval"`
 	CryptoKey      *string `json:"crypto_key"`
+
+	GRPC            *bool   `json:"grpc"`
+	GRPCAddr        *string `json:"grpc_addr"`
+	GRPCTLS         *bool   `json:"grpc_tls"`
+	GRPCDialTimeout *int    `json:"grpc_dial_timeout"`
+	GRPCCallTimeout *int    `json:"grpc_call_timeout"`
 }
 
 func loadServerJSON(path string) (*serverJSON, error) {

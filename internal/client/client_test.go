@@ -306,3 +306,14 @@ func TestPostGzipJSON_UnexpectedStatus_Propagates(t *testing.T) {
 		t.Fatalf("want 403, got %d", code)
 	}
 }
+
+func Test_NewClientWithHTTP(t *testing.T) {
+	ctx := context.Background()
+	st := inmemory.NewMemStorage(ctx)
+	cfg := &config.ClientConfig{}
+	httpc := &http.Client{Timeout: time.Second}
+	cl := NewClientWithHTTP(st, cfg, httpc)
+	if cl == nil {
+		t.Fatal("nil client")
+	}
+}

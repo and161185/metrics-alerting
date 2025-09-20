@@ -21,6 +21,10 @@ import (
 	"github.com/and161185/metrics-alerting/internal/crypto"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
+
+	metricsv1 "github.com/and161185/metrics-alerting/internal/api/metricsv1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type storage interface {
@@ -33,16 +37,35 @@ type Client struct {
 	storage    storage
 	config     *config.ClientConfig
 	httpClient *http.Client
-	realIP     string
+
+	grpcConn   *grpc.ClientConn
+	grpcClient metricsv1.MetricsServiceClient
+
+	realIP string
 }
 
 // NewClient creates a new client instance with the given storage and configuration.
 func NewClient(s storage, cfg *config.ClientConfig) (*Client, error) {
-	hc, err := NewHTTPClient(cfg)
-	if err != nil {
-		return nil, err
+	cl := &Client{storage: s, config: cfg, realIP: detectOutboundIP()}
+
+	if cfg.GRPCEnable {
+		// gRPC клиент
+		conn, err := newGRPCConn(cfg)
+		if err != nil {
+			return nil, err
+		}
+		cl.grpcConn = conn
+		cl.grpcClient = metricsv1.NewMetricsServiceClient(conn)
+	} else {
+		// HTTP клиент (как было)
+		hc, err := NewHTTPClient(cfg)
+		if err != nil {
+			return nil, err
+		}
+		cl.httpClient = hc
 	}
-	return NewClientWithHTTP(s, cfg, hc), nil
+
+	return cl, nil
 }
 
 func detectOutboundIP() string {
@@ -77,6 +100,17 @@ func NewHTTPClient(cfg *config.ClientConfig) (*http.Client, error) {
 	return hc, nil
 }
 
+func newGRPCConn(cfg *config.ClientConfig) (*grpc.ClientConn, error) {
+	cp := grpc.ConnectParams{
+		MinConnectTimeout: time.Duration(cfg.GRPCDialTimeout) * time.Second,
+	}
+	return grpc.NewClient(
+		cfg.GRPCAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithConnectParams(cp),
+	)
+}
+
 // Run starts collecting metrics and sending them to the server in the background.
 func (clnt *Client) Run(ctx context.Context) error {
 	store := clnt.storage
@@ -107,16 +141,26 @@ func (clnt *Client) Run(ctx context.Context) error {
 		go func() {
 			defer wg.Done()
 			for m := range metricsCh {
-				reqCtx, cancel := context.WithTimeout(context.Background(),
-					time.Duration(clnt.config.ClientTimeout)*time.Second)
-				_ = clnt.sendMetricToServer(reqCtx, m)
-				cancel()
+				if clnt.config.GRPCEnable {
+					// gRPC путь
+					reqCtx, cancel := context.WithTimeout(context.Background(), time.Duration(clnt.config.GRPCCallTimeout)*time.Second)
+					_ = clnt.sendMetricGRPC(reqCtx, m)
+					cancel()
+				} else {
+					// HTTP путь (как было)
+					reqCtx, cancel := context.WithTimeout(context.Background(), time.Duration(clnt.config.ClientTimeout)*time.Second)
+					_ = clnt.sendMetricHTTP(reqCtx, m)
+					cancel()
+				}
 			}
 		}()
 	}
 
 	<-ctx.Done()
 	wg.Wait()
+	if clnt.grpcConn != nil {
+		_ = clnt.grpcConn.Close()
+	}
 	return context.Canceled
 }
 
@@ -173,7 +217,6 @@ func collectAndSave(ctx context.Context, store storage, collect func() []model.M
 func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric, interval time.Duration) {
 	if interval <= 0 {
 		<-ctx.Done()
-
 		if metrics, err := store.GetAll(context.Background()); err == nil {
 			for _, m := range metrics {
 				ch <- m
@@ -193,7 +236,7 @@ func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric
 			}
 			for _, m := range metrics {
 				ch <- m
-			} // без select с ctx
+			}
 		case <-ctx.Done():
 			if metrics, err := store.GetAll(context.Background()); err == nil {
 				for _, m := range metrics {
@@ -204,6 +247,8 @@ func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric
 		}
 	}
 }
+
+/* ===================== HTTP путь (как было) ===================== */
 
 func (clnt *Client) postGzipJSON(ctx context.Context, path string, payload any) (int, error) {
 	raw, err := json.Marshal(payload)
@@ -250,7 +295,7 @@ func (clnt *Client) postGzipJSON(ctx context.Context, path string, payload any) 
 	return code, nil
 }
 
-func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) error {
+func (clnt *Client) sendMetricHTTP(ctx context.Context, m *model.Metric) error {
 	code, err := clnt.postGzipJSON(ctx, "/update/", m)
 	if err != nil {
 		return err
@@ -261,17 +306,15 @@ func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) err
 	return nil
 }
 
-func (clnt *Client) sendToServer(ctx context.Context) error {
+func (clnt *Client) sendToServerHTTP(ctx context.Context) error {
 	all, err := clnt.storage.GetAll(ctx)
 	if err != nil || len(all) == 0 {
 		return err
 	}
-
 	metrics := make([]model.Metric, 0, len(all))
 	for _, m := range all {
 		metrics = append(metrics, *m)
 	}
-
 	code, err := clnt.postGzipJSON(ctx, "/updates/", metrics)
 	if err != nil {
 		return err
@@ -280,4 +323,84 @@ func (clnt *Client) sendToServer(ctx context.Context) error {
 		return fmt.Errorf("unexpected status: %d", code)
 	}
 	return nil
+}
+
+/* ===================== gRPC путь ===================== */
+
+func (clnt *Client) sendMetricGRPC(ctx context.Context, m *model.Metric) error {
+	pm, err := toProtoMetric(m)
+	if err != nil {
+		return err
+	}
+	// ретраи как раньше (utils.WithRetry)
+	return utils.WithRetry(ctx, func() error {
+		_, e := clnt.grpcClient.UpdateMetric(ctx, pm)
+		return e
+	})
+}
+
+func (clnt *Client) sendToServerGRPC(ctx context.Context) error {
+	all, err := clnt.storage.GetAll(ctx)
+	if err != nil || len(all) == 0 {
+		return err
+	}
+	items := make([]*metricsv1.Metric, 0, len(all))
+	for _, m := range all {
+		pm, err := toProtoMetric(m)
+		if err != nil {
+			return err
+		}
+		items = append(items, pm)
+	}
+	batch := &metricsv1.MetricsBatch{Items: items}
+	return utils.WithRetry(ctx, func() error {
+		_, e := clnt.grpcClient.UpdateBatch(ctx, batch)
+		return e
+	})
+}
+
+func toProtoMetric(m *model.Metric) (*metricsv1.Metric, error) {
+	if m == nil || m.ID == "" {
+		return nil, fmt.Errorf("empty metric")
+	}
+	switch m.Type {
+	case model.Gauge:
+		if m.Value == nil {
+			return nil, fmt.Errorf("gauge without value")
+		}
+		return &metricsv1.Metric{
+			Id:   m.ID,
+			Kind: metricsv1.MetricKind_GAUGE,
+			Value: &metricsv1.Metric_Gauge{
+				Gauge: *m.Value,
+			},
+		}, nil
+	case model.Counter:
+		if m.Delta == nil {
+			return nil, fmt.Errorf("counter without delta")
+		}
+		return &metricsv1.Metric{
+			Id:   m.ID,
+			Kind: metricsv1.MetricKind_COUNTER,
+			Value: &metricsv1.Metric_Counter{
+				Counter: *m.Delta,
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown metric type: %s", m.Type)
+	}
+}
+
+func (clnt *Client) sendToServer(ctx context.Context) error {
+	if clnt.config.GRPCEnable {
+		return clnt.sendToServerGRPC(ctx)
+	}
+	return clnt.sendToServerHTTP(ctx)
+}
+
+func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) error {
+	if clnt.config.GRPCEnable {
+		return clnt.sendMetricGRPC(ctx, m)
+	}
+	return clnt.sendMetricHTTP(ctx, m)
 }

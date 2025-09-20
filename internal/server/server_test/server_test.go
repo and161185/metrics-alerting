@@ -15,13 +15,15 @@ import (
 	"time"
 
 	"github.com/and161185/metrics-alerting/internal/config"
-	srv "github.com/and161185/metrics-alerting/internal/server"
+	"github.com/and161185/metrics-alerting/internal/server"
 	"github.com/and161185/metrics-alerting/internal/server/testutils"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
+	"github.com/and161185/metrics-alerting/storage/inmemory"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest"
 )
 
 func TestUpdateMetricHandler(t *testing.T) {
@@ -254,7 +256,7 @@ func (s *stubStore) Ping(ctx context.Context) error { return s.err }
 
 func TestNewServer_BuildRouter(t *testing.T) {
 	cfg := &config.ServerConfig{Addr: "127.0.0.1:0"}
-	s := srv.NewServer(&stubStore{}, cfg, nil)
+	s := server.NewServer(&stubStore{}, cfg, nil)
 	require.NotNil(t, s)
 	h := getRouterForTest(s)
 	rr := httptest.NewRecorder()
@@ -271,7 +273,7 @@ func TestRun_StartStop(t *testing.T) {
 		Restore:         true,
 	}
 	st := &stubStore{data: map[string]*model.Metric{}}
-	s := srv.NewServer(st, cfg, nil)
+	s := server.NewServer(st, cfg, nil)
 
 	fs := &memFS{}
 	s.FileStore = fs
@@ -287,7 +289,7 @@ func TestRun_StartStop(t *testing.T) {
 
 func TestUpdateMetricHandlerJSON_Happy(t *testing.T) {
 	cfg := &config.ServerConfig{Addr: "x"}
-	s := srv.NewServer(&stubStore{data: map[string]*model.Metric{}}, cfg, nil)
+	s := server.NewServer(&stubStore{data: map[string]*model.Metric{}}, cfg, nil)
 
 	r := chi.NewRouter()
 	r.Post("/update", s.UpdateMetricHandlerJSON)
@@ -306,7 +308,7 @@ func TestUpdateMetricHandlerJSON_Happy(t *testing.T) {
 func TestUpdateArrayMetricHandlerJSON_Happy(t *testing.T) {
 	cfg := &config.ServerConfig{Addr: "x"}
 	st := &stubStore{data: map[string]*model.Metric{}}
-	s := srv.NewServer(st, cfg, nil)
+	s := server.NewServer(st, cfg, nil)
 
 	r := chi.NewRouter()
 	r.Post("/updates", s.UpdateArrayMetricHandlerJSON)
@@ -331,7 +333,7 @@ func TestGetMetricHandler_Counter(t *testing.T) {
 	st := &stubStore{data: map[string]*model.Metric{
 		"c": {ID: "c", Type: model.Counter, Delta: utils.I64Ptr(9)},
 	}}
-	s := srv.NewServer(st, cfg, nil)
+	s := server.NewServer(st, cfg, nil)
 
 	r := chi.NewRouter()
 	r.Get("/value/{type}/{name}", s.GetMetricHandler)
@@ -351,7 +353,7 @@ func stringsTrim(s string) string {
 	return s
 }
 
-func getRouterForTest(s *srv.Server) http.Handler {
+func getRouterForTest(s *server.Server) http.Handler {
 	r := chi.NewRouter()
 	r.Post("/update/{type}/{name}/{value}", s.UpdateMetricHandler)
 	r.Post("/update", s.UpdateMetricHandlerJSON)
@@ -365,7 +367,7 @@ func getRouterForTest(s *srv.Server) http.Handler {
 
 func nopLogger() *zap.SugaredLogger { return zap.NewNop().Sugar() }
 
-func newServerWithInMem(t *testing.T) *srv.Server {
+func newServerWithInMem(t *testing.T) *server.Server {
 	t.Helper()
 	ctx := context.Background()
 	s := testutils.NewTestServer(ctx)
@@ -374,7 +376,7 @@ func newServerWithInMem(t *testing.T) *srv.Server {
 	return &s
 }
 
-func buildRouter(s *srv.Server) http.Handler {
+func buildRouter(s *server.Server) http.Handler {
 	r := chi.NewRouter()
 	r.Post("/update", s.UpdateMetricHandlerJSON)
 	r.Post("/updates", s.UpdateArrayMetricHandlerJSON)
@@ -612,7 +614,7 @@ func Test_ListMetricsHandler_HTML(t *testing.T) {
 	}
 }
 
-type badPing struct{ srv.Storage }
+type badPing struct{ server.Storage }
 
 func (b badPing) Ping(ctx context.Context) error {
 	return context.DeadlineExceeded
@@ -673,4 +675,32 @@ func Test_GetMetricHandler_NilValue_Plain(t *testing.T) {
 	h.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func Test_Server_startGRPC_OK(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.ServerConfig{
+		GRPCEnable: true,
+		GRPCAddr:   "127.0.0.1:0",
+		GRPCTLS:    false,
+		Logger:     zaptest.NewLogger(t).Sugar(),
+	}
+	srv := &server.Server{
+		Storage: inmemory.NewMemStorage(ctx),
+		Config:  cfg,
+	}
+
+	errCh, stop := srv.StartGRPC(ctx)
+	defer stop()
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("grpc err: %v", err)
+		}
+	case <-time.After(100 * time.Millisecond):
+		// ок, сервер жив
+	}
 }
