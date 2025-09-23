@@ -48,6 +48,15 @@ func TestReadServerEnvironment(t *testing.T) {
 		"STORE_INTERVAL":    "5",
 		"FILE_STORAGE_PATH": "/tmp/testfile.json",
 		"RESTORE":           "false",
+
+		// gRPC
+		"GRPC":          "true",
+		"GRPC_ADDR":     ":9090",
+		"GRPC_TLS":      "true",
+		"GRPC_CERT":     "/s.crt",
+		"GRPC_KEY":      "/s.key",
+		"GRPC_MAX_RECV": "1048576",
+		"GRPC_MAX_SEND": "2097152",
 	}
 
 	setEnvAndRun(t, env, func() {
@@ -59,6 +68,15 @@ func TestReadServerEnvironment(t *testing.T) {
 			require.Equal(t, 5, cfg.StoreInterval)
 			require.Equal(t, "/tmp/testfile.json", cfg.FileStoragePath)
 			require.False(t, cfg.Restore)
+
+			// gRPC
+			require.True(t, cfg.GRPCEnable)
+			require.Equal(t, ":9090", cfg.GRPCAddr)
+			require.True(t, cfg.GRPCTLS)
+			require.Equal(t, "/s.crt", cfg.GRPCCert)
+			require.Equal(t, "/s.key", cfg.GRPCKey)
+			require.Equal(t, 1048576, cfg.GRPCMaxRecvMsg)
+			require.Equal(t, 2097152, cfg.GRPCMaxSendMsg)
 		})
 	})
 }
@@ -68,6 +86,13 @@ func TestReadClientEnvironment(t *testing.T) {
 		"ADDRESS":         "127.0.0.1:9999",
 		"REPORT_INTERVAL": "5",
 		"POLL_INTERVAL":   "1",
+
+		// gRPC
+		"GRPC":              "true",
+		"GRPC_ADDR":         "localhost:9090",
+		"GRPC_TLS":          "false",
+		"GRPC_DIAL_TIMEOUT": "7",
+		"GRPC_CALL_TIMEOUT": "11",
 	}
 
 	setEnvAndRun(t, env, func() {
@@ -78,6 +103,13 @@ func TestReadClientEnvironment(t *testing.T) {
 			require.Equal(t, "127.0.0.1:9999", cfg.ServerAddr)
 			require.Equal(t, 5, cfg.ReportInterval)
 			require.Equal(t, 1, cfg.PollInterval)
+
+			// gRPC
+			require.True(t, cfg.GRPCEnable)
+			require.Equal(t, "localhost:9090", cfg.GRPCAddr)
+			require.False(t, cfg.GRPCTLS)
+			require.Equal(t, 7, cfg.GRPCDialTimeout)
+			require.Equal(t, 11, cfg.GRPCCallTimeout)
 		})
 	})
 }
@@ -296,6 +328,161 @@ func TestClient_JSONLowPriority_FlagsWin(t *testing.T) {
 				require.Equal(t, 123, cfg.RateLimit)
 				require.Equal(t, "/flag.pub", cfg.CryptoKeyPath)
 			})
+		})
+	})
+}
+
+func TestServer_JSONLowPriority_FlagsWin_GRPC(t *testing.T) {
+	td := t.TempDir()
+	cfgPath := writeJSON(t, td, "srv.json", map[string]any{
+		"grpc":          false,
+		"grpc_addr":     "json:9091",
+		"grpc_tls":      true,
+		"grpc_cert":     "/json.crt",
+		"grpc_key":      "/json.key",
+		"grpc_max_recv": 1,
+		"grpc_max_send": 2,
+	})
+
+	withFreshFlagSet(t, func() {
+		withArgs([]string{"cmd",
+			"-grpc=true",
+			"-grpc-addr", "flag:9092",
+			"-grpc-tls=false",
+			"-grpc-cert", "/flag.crt",
+			"-grpc-key", "/flag.key",
+			"-grpc-max-recv", "3",
+			"-grpc-max-send", "4",
+			"-c", cfgPath,
+		}, func() {
+			cfg := NewServerConfig()
+			require.True(t, cfg.GRPCEnable)
+			require.Equal(t, "flag:9092", cfg.GRPCAddr)
+			require.False(t, cfg.GRPCTLS)
+			require.Equal(t, "/flag.crt", cfg.GRPCCert)
+			require.Equal(t, "/flag.key", cfg.GRPCKey)
+			require.Equal(t, 3, cfg.GRPCMaxRecvMsg)
+			require.Equal(t, 4, cfg.GRPCMaxSendMsg)
+		})
+	})
+}
+
+func TestClient_JSONLowPriority_FlagsWin_GRPC(t *testing.T) {
+	td := t.TempDir()
+	cfgPath := writeJSON(t, td, "agent.json", map[string]any{
+		"grpc":              false,
+		"grpc_addr":         "json:9090",
+		"grpc_tls":          true,
+		"grpc_dial_timeout": 1,
+		"grpc_call_timeout": 2,
+	})
+
+	withFreshFlagSet(t, func() {
+		withArgs([]string{"cmd",
+			"-grpc=true",
+			"-grpc-addr", "flag:9099",
+			"-grpc-tls=false",
+			"-grpc-dial-timeout", "7",
+			"-grpc-call-timeout", "8",
+			"-c", cfgPath,
+		}, func() {
+			cfg := NewClientConfig()
+			require.True(t, cfg.GRPCEnable)
+			require.Equal(t, "flag:9099", cfg.GRPCAddr)
+			require.False(t, cfg.GRPCTLS)
+			require.Equal(t, 7, cfg.GRPCDialTimeout)
+			require.Equal(t, 8, cfg.GRPCCallTimeout)
+		})
+	})
+}
+
+func TestServer_ENVHighest_OverridesFlagsAndJSON_GRPC(t *testing.T) {
+	td := t.TempDir()
+	cfgPath := writeJSON(t, td, "srv.json", map[string]any{
+		"grpc":      false,
+		"grpc_addr": "json:1",
+		"grpc_tls":  false,
+		"grpc_cert": "/json.crt",
+		"grpc_key":  "/json.key",
+	})
+
+	env := map[string]string{
+		"GRPC":          "true",
+		"GRPC_ADDR":     "env:2",
+		"GRPC_TLS":      "true",
+		"GRPC_CERT":     "/env.crt",
+		"GRPC_KEY":      "/env.key",
+		"GRPC_MAX_RECV": "5",
+		"GRPC_MAX_SEND": "6",
+	}
+	setEnvAndRun(t, env, func() {
+		withFreshFlagSet(t, func() {
+			withArgs([]string{"cmd",
+				"-grpc=false",
+				"-grpc-addr", "flag:3",
+				"-grpc-tls=false",
+				"-grpc-cert", "/flag.crt",
+				"-grpc-key", "/flag.key",
+				"-c", cfgPath,
+			}, func() {
+				cfg := NewServerConfig()
+				require.True(t, cfg.GRPCEnable)
+				require.Equal(t, "env:2", cfg.GRPCAddr)
+				require.True(t, cfg.GRPCTLS)
+				require.Equal(t, "/env.crt", cfg.GRPCCert)
+				require.Equal(t, "/env.key", cfg.GRPCKey)
+				require.Equal(t, 5, cfg.GRPCMaxRecvMsg)
+				require.Equal(t, 6, cfg.GRPCMaxSendMsg)
+			})
+		})
+	})
+}
+
+func TestClient_ENVHighest_GRPC(t *testing.T) {
+	env := map[string]string{
+		"GRPC":              "true",
+		"GRPC_ADDR":         "env:9090",
+		"GRPC_TLS":          "true",
+		"GRPC_DIAL_TIMEOUT": "9",
+		"GRPC_CALL_TIMEOUT": "12",
+	}
+	setEnvAndRun(t, env, func() {
+		withFreshFlagSet(t, func() {
+			withArgs([]string{"cmd",
+				"-grpc=false",
+				"-grpc-addr", "flag:1",
+				"-grpc-tls=false",
+				"-grpc-dial-timeout", "1",
+				"-grpc-call-timeout", "1",
+			}, func() {
+				cfg := NewClientConfig()
+				require.True(t, cfg.GRPCEnable)
+				require.Equal(t, "env:9090", cfg.GRPCAddr)
+				require.True(t, cfg.GRPCTLS)
+				require.Equal(t, 9, cfg.GRPCDialTimeout)
+				require.Equal(t, 12, cfg.GRPCCallTimeout)
+			})
+		})
+	})
+}
+
+func TestDefaults_GRPC(t *testing.T) {
+
+	withFreshFlagSet(t, func() {
+		withArgs([]string{"cmd"}, func() {
+			cfgS := NewServerConfig()
+			require.Equal(t, ":9090", cfgS.GRPCAddr)
+			require.False(t, cfgS.GRPCEnable)
+		})
+	})
+
+	withFreshFlagSet(t, func() {
+		withArgs([]string{"cmd"}, func() {
+			cfgC := NewClientConfig()
+			require.Equal(t, "localhost:9090", cfgC.GRPCAddr)
+			require.False(t, cfgC.GRPCEnable)
+			require.Equal(t, 5, cfgC.GRPCDialTimeout)
+			require.Equal(t, 5, cfgC.GRPCCallTimeout)
 		})
 	})
 }

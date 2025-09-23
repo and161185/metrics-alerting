@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -20,6 +21,10 @@ import (
 	"github.com/and161185/metrics-alerting/internal/crypto"
 	"github.com/and161185/metrics-alerting/internal/utils"
 	"github.com/and161185/metrics-alerting/model"
+
+	metricsv1 "github.com/and161185/metrics-alerting/internal/api/metricsv1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type storage interface {
@@ -32,20 +37,52 @@ type Client struct {
 	storage    storage
 	config     *config.ClientConfig
 	httpClient *http.Client
+
+	grpcConn   *grpc.ClientConn
+	grpcClient metricsv1.MetricsServiceClient
+
+	realIP string
 }
 
 // NewClient creates a new client instance with the given storage and configuration.
 func NewClient(s storage, cfg *config.ClientConfig) (*Client, error) {
-	hc, err := NewHTTPClient(cfg)
-	if err != nil {
-		return nil, err
+	cl := &Client{storage: s, config: cfg, realIP: detectOutboundIP()}
+
+	if cfg.GRPCEnable {
+		// gRPC клиент
+		conn, err := newGRPCConn(cfg)
+		if err != nil {
+			return nil, err
+		}
+		cl.grpcConn = conn
+		cl.grpcClient = metricsv1.NewMetricsServiceClient(conn)
+	} else {
+		// HTTP клиент (как было)
+		hc, err := NewHTTPClient(cfg)
+		if err != nil {
+			return nil, err
+		}
+		cl.httpClient = hc
 	}
-	return NewClientWithHTTP(s, cfg, hc), nil
+
+	return cl, nil
+}
+
+func detectOutboundIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	if la, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+		return la.IP.String()
+	}
+	return ""
 }
 
 // DI: ready http.Client
 func NewClientWithHTTP(s storage, cfg *config.ClientConfig, hc *http.Client) *Client {
-	return &Client{storage: s, config: cfg, httpClient: hc}
+	return &Client{storage: s, config: cfg, httpClient: hc, realIP: detectOutboundIP()}
 }
 
 // fabric http-client
@@ -61,6 +98,17 @@ func NewHTTPClient(cfg *config.ClientConfig) (*http.Client, error) {
 	}
 	hc.Transport = rt
 	return hc, nil
+}
+
+func newGRPCConn(cfg *config.ClientConfig) (*grpc.ClientConn, error) {
+	cp := grpc.ConnectParams{
+		MinConnectTimeout: time.Duration(cfg.GRPCDialTimeout) * time.Second,
+	}
+	return grpc.NewClient(
+		cfg.GRPCAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithConnectParams(cp),
+	)
 }
 
 // Run starts collecting metrics and sending them to the server in the background.
@@ -93,16 +141,26 @@ func (clnt *Client) Run(ctx context.Context) error {
 		go func() {
 			defer wg.Done()
 			for m := range metricsCh {
-				reqCtx, cancel := context.WithTimeout(context.Background(),
-					time.Duration(clnt.config.ClientTimeout)*time.Second)
-				_ = clnt.sendMetricToServer(reqCtx, m)
-				cancel()
+				if clnt.config.GRPCEnable {
+					// gRPC путь
+					reqCtx, cancel := context.WithTimeout(context.Background(), time.Duration(clnt.config.GRPCCallTimeout)*time.Second)
+					_ = clnt.sendMetricGRPC(reqCtx, m)
+					cancel()
+				} else {
+					// HTTP путь (как было)
+					reqCtx, cancel := context.WithTimeout(context.Background(), time.Duration(clnt.config.ClientTimeout)*time.Second)
+					_ = clnt.sendMetricHTTP(reqCtx, m)
+					cancel()
+				}
 			}
 		}()
 	}
 
 	<-ctx.Done()
 	wg.Wait()
+	if clnt.grpcConn != nil {
+		_ = clnt.grpcConn.Close()
+	}
 	return context.Canceled
 }
 
@@ -159,7 +217,6 @@ func collectAndSave(ctx context.Context, store storage, collect func() []model.M
 func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric, interval time.Duration) {
 	if interval <= 0 {
 		<-ctx.Done()
-
 		if metrics, err := store.GetAll(context.Background()); err == nil {
 			for _, m := range metrics {
 				ch <- m
@@ -179,7 +236,7 @@ func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric
 			}
 			for _, m := range metrics {
 				ch <- m
-			} // без select с ctx
+			}
 		case <-ctx.Done():
 			if metrics, err := store.GetAll(context.Background()); err == nil {
 				for _, m := range metrics {
@@ -191,133 +248,159 @@ func dispatchMetrics(ctx context.Context, store storage, ch chan<- *model.Metric
 	}
 }
 
-func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) error {
-	serverAddr := clnt.config.ServerAddr
-	httpClient := clnt.httpClient
+/* ===================== HTTP путь (как было) ===================== */
 
-	bodyRaw, err := json.Marshal(m)
+func (clnt *Client) postGzipJSON(ctx context.Context, path string, payload any) (int, error) {
+	raw, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return 0, fmt.Errorf("marshal: %w", err)
 	}
 
 	var body bytes.Buffer
 	zw := gzip.NewWriter(&body)
-	if _, err = zw.Write(bodyRaw); err != nil {
-		return fmt.Errorf("gzip write: %w", err)
+	if _, err = zw.Write(raw); err != nil {
+		return 0, fmt.Errorf("gzip write: %w", err)
 	}
 	if err = zw.Close(); err != nil {
-		return fmt.Errorf("gzip close: %w", err)
+		return 0, fmt.Errorf("gzip close: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/update/", serverAddr)
-	req, err := http.NewRequest(http.MethodPost, url, &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, clnt.config.ServerAddr+path, &body)
 	if err != nil {
-		return fmt.Errorf("new request: %w", err)
+		return 0, fmt.Errorf("new request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
-
+	if clnt.realIP != "" {
+		req.Header.Set("X-Real-IP", clnt.realIP)
+	}
 	if clnt.config.Key != "" {
 		req.Header.Set("HashSHA256", utils.CalculateHash(body.Bytes(), clnt.config.Key))
 	}
 
-	var statusCode int
+	var code int
 	err = utils.WithRetry(ctx, func() error {
-		resp, reqErr := httpClient.Do(req)
-		if reqErr != nil {
-			return reqErr
+		resp, e := clnt.httpClient.Do(req)
+		if e != nil {
+			return e
 		}
 		defer resp.Body.Close()
-
-		_, err = io.Copy(io.Discard, resp.Body)
-		if err != nil {
-			return err
-		}
-
-		statusCode = resp.StatusCode
+		_, _ = io.Copy(io.Discard, resp.Body)
+		code = resp.StatusCode
 		return nil
 	})
-
 	if err != nil {
-		return fmt.Errorf("send request: %w", err)
+		return 0, fmt.Errorf("send request: %w", err)
 	}
+	return code, nil
+}
 
-	if statusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", statusCode)
+func (clnt *Client) sendMetricHTTP(ctx context.Context, m *model.Metric) error {
+	code, err := clnt.postGzipJSON(ctx, "/update/", m)
+	if err != nil {
+		return err
 	}
-
+	if code != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", code)
+	}
 	return nil
 }
 
-func (clnt *Client) sendToServer(ctx context.Context) error {
-	store := clnt.storage
-	serverAddr := clnt.config.ServerAddr
-	httpClient := clnt.httpClient
-
-	all, err := store.GetAll(ctx)
-	if err != nil {
-		return fmt.Errorf("internal error: %w", err)
+func (clnt *Client) sendToServerHTTP(ctx context.Context) error {
+	all, err := clnt.storage.GetAll(ctx)
+	if err != nil || len(all) == 0 {
+		return err
 	}
-
-	if len(all) == 0 {
-		return nil
-	}
-
 	metrics := make([]model.Metric, 0, len(all))
 	for _, m := range all {
 		metrics = append(metrics, *m)
 	}
-
-	bodyRaw, err := json.Marshal(metrics)
+	code, err := clnt.postGzipJSON(ctx, "/updates/", metrics)
 	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+		return err
 	}
+	if code != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", code)
+	}
+	return nil
+}
 
-	var body bytes.Buffer
-	zw := gzip.NewWriter(&body)
-	if _, err = zw.Write(bodyRaw); err != nil {
-		return fmt.Errorf("gzip write: %w", err)
-	}
-	if err = zw.Close(); err != nil {
-		return fmt.Errorf("gzip close: %w", err)
-	}
+/* ===================== gRPC путь ===================== */
 
-	url := fmt.Sprintf("%s/updates/", serverAddr)
-	req, err := http.NewRequest(http.MethodPost, url, &body)
+func (clnt *Client) sendMetricGRPC(ctx context.Context, m *model.Metric) error {
+	pm, err := toProtoMetric(m)
 	if err != nil {
-		return fmt.Errorf("new request: %w", err)
+		return err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
+	// ретраи как раньше (utils.WithRetry)
+	return utils.WithRetry(ctx, func() error {
+		_, e := clnt.grpcClient.UpdateMetric(ctx, pm)
+		return e
+	})
+}
 
-	if clnt.config.Key != "" {
-		req.Header.Set("HashSHA256", utils.CalculateHash(body.Bytes(), clnt.config.Key))
+func (clnt *Client) sendToServerGRPC(ctx context.Context) error {
+	all, err := clnt.storage.GetAll(ctx)
+	if err != nil || len(all) == 0 {
+		return err
 	}
-
-	var statusCode int
-	err = utils.WithRetry(ctx, func() error {
-		resp, reqErr := httpClient.Do(req)
-		if reqErr != nil {
-			return reqErr
-		}
-		defer resp.Body.Close()
-
-		_, err = io.Copy(io.Discard, resp.Body)
+	items := make([]*metricsv1.Metric, 0, len(all))
+	for _, m := range all {
+		pm, err := toProtoMetric(m)
 		if err != nil {
 			return err
 		}
-
-		statusCode = resp.StatusCode
-		return nil
+		items = append(items, pm)
+	}
+	batch := &metricsv1.MetricsBatch{Items: items}
+	return utils.WithRetry(ctx, func() error {
+		_, e := clnt.grpcClient.UpdateBatch(ctx, batch)
+		return e
 	})
+}
 
-	if err != nil {
-		return fmt.Errorf("send request: %w", err)
+func toProtoMetric(m *model.Metric) (*metricsv1.Metric, error) {
+	if m == nil || m.ID == "" {
+		return nil, fmt.Errorf("empty metric")
 	}
-
-	if statusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status: %d", statusCode)
+	switch m.Type {
+	case model.Gauge:
+		if m.Value == nil {
+			return nil, fmt.Errorf("gauge without value")
+		}
+		return &metricsv1.Metric{
+			Id:   m.ID,
+			Kind: metricsv1.MetricKind_GAUGE,
+			Value: &metricsv1.Metric_Gauge{
+				Gauge: *m.Value,
+			},
+		}, nil
+	case model.Counter:
+		if m.Delta == nil {
+			return nil, fmt.Errorf("counter without delta")
+		}
+		return &metricsv1.Metric{
+			Id:   m.ID,
+			Kind: metricsv1.MetricKind_COUNTER,
+			Value: &metricsv1.Metric_Counter{
+				Counter: *m.Delta,
+			},
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown metric type: %s", m.Type)
 	}
+}
 
-	return nil
+func (clnt *Client) sendToServer(ctx context.Context) error {
+	if clnt.config.GRPCEnable {
+		return clnt.sendToServerGRPC(ctx)
+	}
+	return clnt.sendToServerHTTP(ctx)
+}
+
+func (clnt *Client) sendMetricToServer(ctx context.Context, m *model.Metric) error {
+	if clnt.config.GRPCEnable {
+		return clnt.sendMetricGRPC(ctx, m)
+	}
+	return clnt.sendMetricHTTP(ctx, m)
 }

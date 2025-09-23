@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package metrics.v1;
+option go_package = "github.com/and161185/metrics-alerting/internal/api/metricsv1;metricsv1";
+
+message Empty {}
+
+enum MetricKind {
+  METRIC_KIND_UNSPECIFIED = 0;
+  GAUGE = 1;
+  COUNTER = 2;
+}
+
+message Metric {
+  string id = 1;          // имя метрики
+  MetricKind kind = 2;    // тип
+  oneof value {           // значение
+    double gauge = 3;     // для GAUGE
+    int64  counter = 4;   // для COUNTER (дельта/сумма — как в твоей логике)
+  }
+}
+
+message MetricsBatch {
+  repeated Metric items = 1;
+}
+
+message GetRequest {
+  string id = 1;
+  MetricKind kind = 2;
+}
+
+service MetricsService {
+  rpc Ping(Empty) returns (Empty);
+  rpc UpdateMetric(Metric) returns (Empty);
+  rpc UpdateBatch(MetricsBatch) returns (Empty);
+  rpc GetMetric(GetRequest) returns (Metric);
+  rpc GetAll(Empty) returns (MetricsBatch);
+}

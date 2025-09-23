@@ -19,6 +19,12 @@ type ClientConfig struct {
 	Key            string // Key for hash generation
 	RateLimit      int    // Limit on simultaneous outgoing requests
 	CryptoKeyPath  string // Path to public key
+
+	GRPCEnable      bool
+	GRPCAddr        string
+	GRPCTLS         bool
+	GRPCDialTimeout int
+	GRPCCallTimeout int
 }
 
 // NewClientConfig creates and returns a new ClientConfig by parsing flags and environment variables.
@@ -29,10 +35,25 @@ func NewClientConfig() *ClientConfig {
 		PollInterval:   2,
 		ClientTimeout:  10,
 		RateLimit:      runtime.NumCPU(),
+
+		GRPCEnable:      false,
+		GRPCAddr:        "localhost:9090",
+		GRPCTLS:         false,
+		GRPCDialTimeout: 5,
+		GRPCCallTimeout: 5,
 	}
 
 	var fAddr, fKey, fCrypto, fConf strFlag
 	var fRep, fPoll, fTO, fRate intFlag
+	var fGRPCEnable boolFlag
+	var fGRPCAddr strFlag
+	fGRPCAddr.v = cfg.GRPCAddr
+	var fGRPCTLS boolFlag
+	var fGRPCDialTO intFlag
+	fGRPCDialTO.v = cfg.GRPCDialTimeout
+	var fGRPCCallTO intFlag
+	fGRPCCallTO.v = cfg.GRPCCallTimeout
+
 	flag.Var(&fAddr, "a", "HTTP server address (must include http(s)://)")
 	flag.Var(&fRep, "r", "report interval (seconds)")
 	flag.Var(&fPoll, "p", "poll interval (seconds)")
@@ -42,6 +63,12 @@ func NewClientConfig() *ClientConfig {
 	flag.Var(&fCrypto, "crypto-key", "Path to public key")
 	flag.Var(&fConf, "c", "Path to JSON config file")
 	flag.Var(&fConf, "config", "Path to JSON config file (alias)")
+
+	flag.Var(&fGRPCEnable, "grpc", "enable gRPC client")
+	flag.Var(&fGRPCAddr, "grpc-addr", "gRPC server address (host:port)")
+	flag.Var(&fGRPCTLS, "grpc-tls", "use TLS for gRPC")
+	flag.Var(&fGRPCDialTO, "grpc-dial-timeout", "gRPC dial timeout (seconds)")
+	flag.Var(&fGRPCCallTO, "grpc-call-timeout", "gRPC call timeout (seconds)")
 	flag.Parse()
 
 	if fAddr.set {
@@ -66,6 +93,22 @@ func NewClientConfig() *ClientConfig {
 		cfg.CryptoKeyPath = fCrypto.v
 	}
 
+	if fGRPCEnable.set {
+		cfg.GRPCEnable = fGRPCEnable.v
+	}
+	if fGRPCAddr.set {
+		cfg.GRPCAddr = fGRPCAddr.v
+	}
+	if fGRPCTLS.set {
+		cfg.GRPCTLS = fGRPCTLS.v
+	}
+	if fGRPCDialTO.set {
+		cfg.GRPCDialTimeout = fGRPCDialTO.v
+	}
+	if fGRPCCallTO.set {
+		cfg.GRPCCallTimeout = fGRPCCallTO.v
+	}
+
 	if fConf.v == "" {
 		if v := os.Getenv("CONFIG"); v != "" {
 			fConf.v = v
@@ -88,6 +131,22 @@ func NewClientConfig() *ClientConfig {
 			}
 			if js.CryptoKey != nil && !fCrypto.set {
 				cfg.CryptoKeyPath = *js.CryptoKey
+			}
+
+			if js.GRPC != nil && !fGRPCEnable.set {
+				cfg.GRPCEnable = *js.GRPC
+			}
+			if js.GRPCAddr != nil && !fGRPCAddr.set {
+				cfg.GRPCAddr = *js.GRPCAddr
+			}
+			if js.GRPCTLS != nil && !fGRPCTLS.set {
+				cfg.GRPCTLS = *js.GRPCTLS
+			}
+			if js.GRPCDialTimeout != nil && !fGRPCDialTO.set {
+				cfg.GRPCDialTimeout = *js.GRPCDialTimeout
+			}
+			if js.GRPCCallTimeout != nil && !fGRPCCallTO.set {
+				cfg.GRPCCallTimeout = *js.GRPCCallTimeout
 			}
 		}
 	}
@@ -138,5 +197,29 @@ func readClientEnvironment(cfg *ClientConfig) {
 
 	if cryptokey := os.Getenv("CRYPTO_KEY"); cryptokey != "" {
 		cfg.CryptoKeyPath = cryptokey
+	}
+
+	if v := os.Getenv("GRPC"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.GRPCEnable = b
+		}
+	}
+	if v := os.Getenv("GRPC_ADDR"); v != "" {
+		cfg.GRPCAddr = v
+	}
+	if v := os.Getenv("GRPC_TLS"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.GRPCTLS = b
+		}
+	}
+	if v := os.Getenv("GRPC_DIAL_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.GRPCDialTimeout = n
+		}
+	}
+	if v := os.Getenv("GRPC_CALL_TIMEOUT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.GRPCCallTimeout = n
+		}
 	}
 }
